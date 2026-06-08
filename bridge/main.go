@@ -19,6 +19,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/sha1"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -52,7 +53,7 @@ type config struct {
 
 func loadConfig() (config, error) {
 	c := config{
-		listen:   env("BRIDGE_LISTEN", ":8080"),
+		listen:   env("BRIDGE_LISTEN", ":49152"),
 		token:    os.Getenv("BRIDGE_TOKEN"),
 		nutAddr:  env("NUT_ADDR", "127.0.0.1:3493"),
 		tlsCert:  os.Getenv("BRIDGE_TLS_CERT"),
@@ -403,6 +404,166 @@ func (s *server) writeJSON(w http.ResponseWriter, b []byte, err error) {
 }
 
 // ---------------------------------------------------------------------------
+// SSDP — autodescubrimiento en LAN (stdlib pura, sin dependencias externas)
+// ---------------------------------------------------------------------------
+
+const (
+	ssdpMulticast  = "239.255.255.250:1900"
+	ssdpST         = "urn:schemas-pnut:device:SaiMonitor:1"
+	ssdpNotifyFreq = 30 * time.Minute
+)
+
+// deviceUUID genera un UUID estable derivado del hostname (sin fichero de estado).
+func deviceUUID() string {
+	hostname, _ := os.Hostname()
+	h := sha1.New()
+	h.Write([]byte("pnut-sai-monitor-" + hostname))
+	b := h.Sum(nil) // 20 bytes
+	b[6] = (b[6] & 0x0f) | 0x50 // version 5
+	b[8] = (b[8] & 0x3f) | 0x80 // variant RFC4122
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// lanIP devuelve una IPv4 LAN no-loopback y no link-local.
+// Prioriza eth0 (cableada) sobre wlan0 (WiFi) sobre cualquier otra.
+func lanIP() string {
+	ifaces, _ := net.Interfaces()
+	score := func(name string) int {
+		switch {
+		case strings.HasPrefix(name, "eth"), strings.HasPrefix(name, "enp"), strings.HasPrefix(name, "en"):
+			return 3
+		case strings.HasPrefix(name, "wlan"), strings.HasPrefix(name, "wlp"):
+			return 2
+		case strings.HasPrefix(name, "docker"), strings.HasPrefix(name, "br-"), strings.HasPrefix(name, "veth"):
+			return 0
+		default:
+			return 1
+		}
+	}
+	bestIP := ""
+	bestScore := -1
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, _ := iface.Addrs()
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+				continue
+			}
+			ip4 := ip.To4()
+			if ip4 == nil {
+				continue
+			}
+			s := score(iface.Name)
+			if s > bestScore {
+				bestScore = s
+				bestIP = ip4.String()
+			}
+		}
+	}
+	return bestIP
+}
+
+func ssdpNotifyPkt(location, uuid, name string) []byte {
+	return []byte("NOTIFY * HTTP/1.1\r\n" +
+		"HOST: 239.255.255.250:1900\r\n" +
+		"CACHE-CONTROL: max-age=1800\r\n" +
+		"LOCATION: " + location + "\r\n" +
+		"NT: " + ssdpST + "\r\n" +
+		"NTS: ssdp:alive\r\n" +
+		"SERVER: Linux/armv8 UPnP/1.0 PNut/1.0\r\n" +
+		"USN: uuid:" + uuid + "::" + ssdpST + "\r\n" +
+		"X-PNUT-NAME: " + name + "\r\n\r\n")
+}
+
+func ssdpResponsePkt(location, uuid, name string) []byte {
+	return []byte("HTTP/1.1 200 OK\r\n" +
+		"CACHE-CONTROL: max-age=1800\r\n" +
+		"DATE: " + time.Now().UTC().Format(http.TimeFormat) + "\r\n" +
+		"EXT:\r\n" +
+		"LOCATION: " + location + "\r\n" +
+		"SERVER: Linux/armv8 UPnP/1.0 PNut/1.0\r\n" +
+		"ST: " + ssdpST + "\r\n" +
+		"USN: uuid:" + uuid + "::" + ssdpST + "\r\n" +
+		"X-PNUT-NAME: " + name + "\r\n\r\n")
+}
+
+// ssdpSender envía NOTIFY alive al grupo multicast cada ssdpNotifyFreq.
+func ssdpSender(location, uuid, name string) {
+	addr, err := net.ResolveUDPAddr("udp4", ssdpMulticast)
+	if err != nil {
+		log.Printf("ssdp sender: %v", err)
+		return
+	}
+	conn, err := net.DialUDP("udp4", nil, addr)
+	if err != nil {
+		log.Printf("ssdp sender: %v", err)
+		return
+	}
+	defer conn.Close()
+	pkt := ssdpNotifyPkt(location, uuid, name)
+	// Burst inicial de 3 NOTIFYs separados 200ms (recomendación UPnP)
+	// para que dispositivos que están escuchando reciban al menos uno.
+	for i := 0; i < 3; i++ {
+		if _, werr := conn.Write(pkt); werr != nil {
+			log.Printf("ssdp sender: write: %v", werr)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	for {
+		time.Sleep(ssdpNotifyFreq)
+		if _, werr := conn.Write(pkt); werr != nil {
+			log.Printf("ssdp sender: write: %v", werr)
+		}
+	}
+}
+
+// ssdpListener responde a M-SEARCH desde el grupo multicast.
+func ssdpListener(location, uuid, name string) {
+	gaddr, err := net.ResolveUDPAddr("udp4", ssdpMulticast)
+	if err != nil {
+		log.Printf("ssdp listener: %v", err)
+		return
+	}
+	conn, err := net.ListenMulticastUDP("udp4", nil, gaddr)
+	if err != nil {
+		log.Printf("ssdp listener: no se pudo unirse al multicast (¿otro proceso en UDP 1900?): %v", err)
+		return
+	}
+	defer conn.Close()
+	buf := make([]byte, 2048)
+	for {
+		n, src, rerr := conn.ReadFromUDP(buf)
+		if rerr != nil {
+			log.Printf("ssdp listener: read: %v — saliendo", rerr)
+			return
+		}
+		msg := string(buf[:n])
+		if !strings.HasPrefix(msg, "M-SEARCH") {
+			continue
+		}
+		if !strings.Contains(msg, ssdpST) && !strings.Contains(msg, "ssdp:all") {
+			continue
+		}
+		conn.WriteToUDP(ssdpResponsePkt(location, uuid, name), src)
+	}
+}
+
+// ssdpLoop arranca el sender y el listener en goroutines independientes.
+func ssdpLoop(location, uuid, name string) {
+	go ssdpSender(location, uuid, name)
+	go ssdpListener(location, uuid, name)
+}
+
+// ---------------------------------------------------------------------------
 // main
 // ---------------------------------------------------------------------------
 
@@ -444,6 +605,18 @@ func main() {
 			log.Fatalf("servidor: %v", err)
 		}
 	}()
+
+	// Autodescubrimiento SSDP en LAN
+	if ip := lanIP(); ip != "" {
+		_, port, _ := net.SplitHostPort(cfg.listen)
+		location := "http://" + ip + ":" + port
+		uuid := deviceUUID()
+		name := env("BRIDGE_NAME", "SAI Monitor")
+		go ssdpLoop(location, uuid, name)
+		log.Printf("ssdp: anunciando %q en %s", name, location)
+	} else {
+		log.Printf("ssdp: no se detectó IP LAN, autodescubrimiento desactivado")
+	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)

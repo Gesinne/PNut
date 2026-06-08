@@ -20,10 +20,22 @@ Puente de **solo lectura** entre NUT (`upsd`) y HTTP/JSON, con dashboard web par
 
 - Binario Go estático (~6 MB), sin intérprete ni Docker
 - Dashboard en una sola página HTML (sin build, sin npm)
+- **Autodescubrimiento SSDP en LAN**: las Pis se anuncian solas, el dashboard las encuentra sin teclear IP
+- Puerto privado IANA (49152) en lugar de 8080 para evitar bloqueos de proxies/firewalls
 - Autenticación por token Bearer con comparación en tiempo constante
 - Rate limiting, caché TTL, CORS restringido a orígenes concretos
 - Alertas visuales: batería baja, carga elevada, batería dañada
 - Modo claro/oscuro, responsive, sin dependencias de red para funcionar
+
+---
+
+## Autodescubrimiento en LAN
+
+Cada puente SAI se anuncia en la red local vía **SSDP multicast** (UDP 1900). El dashboard tiene un botón "Buscar SAIs en la red" que los lista automáticamente — solo tienes que pegar el token.
+
+> **Importante**: el descubrimiento NO sustituye al token. SSDP solo encuentra la URL del puente. El token Bearer sigue siendo obligatorio para cada petición HTTP. Cada Pi tiene su propio token generado con `openssl rand -hex 32`.
+
+Identifica cada SAI con `BRIDGE_NAME` en `/etc/sai-monitor/sai-monitor.env`. Si tienes varios SAIs en la red, cada uno aparecerá con su nombre.
 
 ---
 
@@ -83,3 +95,14 @@ python3 scripts/serve.py
 ## Descargas
 
 Ver [Releases](../../releases) para descargar los binarios compilados directamente.
+
+---
+
+## Recompilar el binario
+
+Solo necesario si modificas `bridge/main.go`:
+
+```bash
+cd bridge
+GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o sai-monitor-arm64 .
+```

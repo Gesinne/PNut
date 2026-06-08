@@ -28,6 +28,7 @@ Moderna · Clara · Profesional. Herramienta que se mantiene fuera del camino. E
 2. **Desaparece.** La interfaz no debe llamar la atención; debe ejecutar la tarea y retirarse.
 3. **Consistencia sobre sorpresa.** Mismo vocabulario visual en todas las partes del dashboard.
 4. **Feedback inmediato.** Cada acción tiene respuesta visual; ningún estado queda sin representar.
+5. **Zero-trust en la red.** El descubrimiento SSDP encuentra la URL del puente, pero el token Bearer es obligatorio en cada petición HTTP. La conveniencia de UX nunca relaja la autenticación.
 
 ## Accessibility & Inclusion
 

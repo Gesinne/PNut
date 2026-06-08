@@ -233,14 +233,19 @@ mkdir -p /etc/sai-monitor
 TOKEN=$(openssl rand -hex 32)
 echo "TOKEN: $TOKEN"   # guárdalo
 cat > /etc/sai-monitor/sai-monitor.env << EOF
-BRIDGE_LISTEN=:8080
+BRIDGE_LISTEN=:49152
 BRIDGE_TOKEN=${TOKEN}
+BRIDGE_NAME=SAI Salón
 NUT_ADDR=127.0.0.1:3493
 BRIDGE_CACHE_TTL=1s
 BRIDGE_ORIGINS=http://localhost:5500
 EOF
 chmod 600 /etc/sai-monitor/sai-monitor.env
 ```
+
+> **`BRIDGE_NAME`** es el nombre con el que la Pi se anuncia en la LAN vía SSDP.
+> Si tienes varios SAIs en la misma red, ponles nombres distintos
+> (ej. "SAI Salón", "SAI Rack", "SAI Garaje") para distinguirlos en el descubrimiento.
 
 > **Error frecuente:** `useradd: user 'saibridge' already exists` — ya existía.
 > Verifica con `id saibridge`. Si el `gid` es `nut`, está bien y continúa.
@@ -328,13 +333,13 @@ systemctl status sai-monitor
 
 ```bash
 # Debe dar 401 (rechaza sin token)
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/api/ups
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:49152/api/ups
 
 # Debe devolver JSON con la lista de SAIs
-curl -s -H "Authorization: Bearer TU_TOKEN" http://127.0.0.1:8080/api/ups
+curl -s -H "Authorization: Bearer TU_TOKEN" http://127.0.0.1:49152/api/ups
 
 # Debe devolver todas las variables del SAI
-curl -s -H "Authorization: Bearer TU_TOKEN" http://127.0.0.1:8080/api/ups/sai1
+curl -s -H "Authorization: Bearer TU_TOKEN" http://127.0.0.1:49152/api/ups/sai1
 ```
 
 > **Error frecuente:** el curl devuelve `000` (sin respuesta) en lugar de `401`.
@@ -351,17 +356,21 @@ curl -s -H "Authorization: Bearer TU_TOKEN" http://127.0.0.1:8080/api/ups/sai1
 Desde la carpeta del proyecto:
 
 ```bash
-python3 serve.py
+python3 scripts/serve.py
 ```
 
 Abre el navegador automáticamente en `http://localhost:5500`. Ctrl+C para parar.
+
+> **Autodescubrimiento**: en la pestaña Equipos, pulsa "Buscar SAIs en la red".
+> Cada Pi con el puente corriendo aparecerá automáticamente (sin teclear IP).
+> El token sigue siendo obligatorio — el descubrimiento solo encuentra la URL.
 
 > **Error frecuente:** `Puerto 5500 ocupado`
 > El script lo detecta y te da el comando exacto para liberarlo.
 > Si prefieres hacerlo manual:
 > ```bash
 > kill $(lsof -ti:5500)
-> python3 serve.py
+> python3 scripts/serve.py
 > ```
 
 Pulsa "Añadir equipo":
@@ -369,7 +378,7 @@ Pulsa "Añadir equipo":
 | Campo | Valor |
 |---|---|
 | Etiqueta | Salicru 850 (o lo que quieras) |
-| URL | `http://IP_DE_LA_PI:8080` |
+| URL | `http://IP_DE_LA_PI:49152` |
 | Token | el generado con `openssl rand -hex 32` |
 
 > **Error frecuente en Firefox:** `Uncaught ReferenceError: f_label is not defined`
@@ -412,7 +421,7 @@ Pulsa "Añadir equipo":
 systemctl stop sai-monitor
 
 cat > /etc/sai-monitor/sai-monitor.env << 'EOF'
-BRIDGE_LISTEN=:8080
+BRIDGE_LISTEN=:49152
 BRIDGE_TOKEN=TU_TOKEN
 NUT_ADDR=127.0.0.1:3493
 BRIDGE_CACHE_TTL=1s
@@ -435,7 +444,7 @@ dmesg | grep -E "I/O error|mmcblk|EXT4-fs" | tail -10
 upsc sai1 | grep -E "ups.status|battery.charge|ups.load"
 
 # Puente respondiendo
-curl -s -H "Authorization: Bearer TU_TOKEN" http://127.0.0.1:8080/api/ups
+curl -s -H "Authorization: Bearer TU_TOKEN" http://127.0.0.1:49152/api/ups
 
 # Logs del puente en tiempo real
 journalctl -u sai-monitor -f

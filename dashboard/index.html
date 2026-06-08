@@ -423,6 +423,27 @@ button { touch-action: manipulation; }
   .vars-table td:nth-child(3) { display: none; }
 }
 
+/* ─── Descubrimiento SSDP ───────────────────────── */
+.discover-sep {
+  margin-top: 16px; padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.discover-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.discover-item {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 10px 12px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+}
+.discover-item-info { flex: 1; min-width: 0; }
+.discover-item-name { font-size: 14px; font-weight: 600; }
+.discover-item-url  {
+  font-size: 12px; color: var(--txt-muted);
+  font-family: ui-monospace, monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.discover-msg { font-size: 13px; color: var(--txt-muted); margin-top: 8px; }
+.discover-err { font-size: 13px; color: var(--err); margin-top: 8px; }
+
 /* ─── Reduced motion ─────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -469,7 +490,7 @@ button { touch-action: manipulation; }
       <div class="empty-state">
         <h2>No hay SAIs configurados</h2>
         <p>Ve a la pestaña <strong>Equipos</strong> para añadir tu SAI.</p>
-        <p>Necesitas la URL del puente <span class="inline-code">http://IP_PI:8080</span> y el token de acceso.</p>
+        <p>Necesitas la URL del puente <span class="inline-code">http://IP_PI:49152</span> y el token de acceso.</p>
         <button class="btn-goto-equipos" id="btn-goto-equipos">Ir a Equipos</button>
       </div>
     </div>
@@ -486,7 +507,7 @@ button { touch-action: manipulation; }
         </div>
         <div class="form-group">
           <label class="form-label" for="f-url">URL del puente SAI</label>
-          <input class="form-input" id="f-url" placeholder="http://192.168.0.140:8080" autocomplete="off">
+          <input class="form-input" id="f-url" placeholder="http://192.168.0.140:49152" autocomplete="off">
         </div>
         <div class="form-group">
           <label class="form-label" for="f-token">Token de acceso</label>
@@ -495,6 +516,13 @@ button { touch-action: manipulation; }
         <div class="form-group">
           <button class="btn-primary" id="btn-add" disabled>Añadir SAI</button>
         </div>
+      </div>
+      <div class="discover-sep">
+        <button class="btn-ghost" id="btn-discover" style="display:flex;align-items:center;gap:7px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          Buscar SAIs en la red
+        </button>
+        <div id="discover-results"></div>
       </div>
     </div>
 
@@ -1131,6 +1159,69 @@ function updateUI(){
 }
 
 function uid(){ return Math.random().toString(36).slice(2, 9); }
+
+/* ─── Descubrimiento SSDP ───────────────────────── */
+document.getElementById("btn-discover").addEventListener("click", function(){
+  var btn     = this;
+  var results = document.getElementById("discover-results");
+  btn.disabled = true;
+  btn.querySelector("span") && (btn.querySelector("span").textContent = "Buscando...");
+  btn.lastChild.textContent = " Buscando... (3 s)";
+  results.innerHTML = "";
+
+  fetch("http://localhost:5500/api/discover")
+    .then(function(r){
+      if(!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function(devices){
+      btn.disabled = false;
+      btn.lastChild.textContent = " Buscar SAIs en la red";
+      var safe = devices.filter(function(d){
+        return /^https?:\/\/[^\s"'<>]+$/.test(d.url || "");
+      });
+      if(!safe.length){
+        results.innerHTML = '<div class="discover-msg">No se encontraron SAIs en la red.</div>';
+        return;
+      }
+      var container = document.createElement("div");
+      container.className = "discover-list";
+      safe.forEach(function(d){
+        var item = document.createElement("div");
+        item.className = "discover-item";
+        var info = document.createElement("div");
+        info.className = "discover-item-info";
+        var nm = document.createElement("div");
+        nm.className = "discover-item-name";
+        nm.textContent = d.name || d.url;
+        var ur = document.createElement("div");
+        ur.className = "discover-item-url";
+        ur.textContent = d.url;
+        info.appendChild(nm); info.appendChild(ur);
+        var add = document.createElement("button");
+        add.className = "btn-primary btn-sm";
+        add.textContent = "Añadir";
+        add.addEventListener("click", function(){
+          document.getElementById("f-label").value = d.name || "";
+          document.getElementById("f-url").value   = d.url;
+          document.getElementById("f-token").value = "";
+          updateAddBtn();
+          document.getElementById("f-token").focus();
+        });
+        item.appendChild(info); item.appendChild(add);
+        container.appendChild(item);
+      });
+      results.innerHTML = "";
+      results.appendChild(container);
+    })
+    .catch(function(){
+      btn.disabled = false;
+      btn.lastChild.textContent = " Buscar SAIs en la red";
+      results.innerHTML =
+        '<div class="discover-err">No se pudo contactar con el servidor local. '+
+        'Asegúrate de que <code>serve.py</code> está en marcha.</div>';
+    });
+});
 
 /* ─── Arranque ───────────────────────────────────── */
 updateAddBtn();
