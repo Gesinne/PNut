@@ -1,0 +1,38 @@
+[Unit]
+Description=Puente NUT->HTTP (solo lectura) para monitor de SAI
+After=network-online.target nut-server.service
+Wants=network-online.target
+
+[Service]
+# Usuario sin privilegios, en el grupo nut para hablar con upsd local
+User=saibridge
+Group=nut
+EnvironmentFile=/etc/sai-monitor/sai-monitor.env
+ExecStart=/usr/local/bin/sai-monitor
+Restart=on-failure
+RestartSec=3
+
+# --- Endurecimiento (coste de CPU cero, reduce superficie de ataque) ---
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+AmbientCapabilities=
+ReadWritePaths=
+# Límites de recursos (la Pi tiene poca RAM)
+MemoryMax=64M
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

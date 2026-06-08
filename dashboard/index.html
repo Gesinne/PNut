@@ -1,0 +1,1143 @@
+<!doctype html>
+<html lang="es" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor SAI · NUT</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.min.css">
+<style>
+/* ─── Tokens: modo claro ─────────────────────────── */
+:root {
+  --bg:         #F0F4F8;
+  --surface:    #FFFFFF;
+  --border:     #E2E8F0;
+  --txt:        #1E293B;
+  --txt-muted:  #64748B;
+  --ok:         #16A34A;
+  --ok-bg:      #DCFCE7;
+  --warn:       #D97706;
+  --warn-bg:    #FEF3C7;
+  --err:        #DC2626;
+  --err-bg:     #FEE2E2;
+  --accent:     #2563EB;
+  --accent-bg:  #DBEAFE;
+  --shadow-sm:  0 1px 3px rgba(0,0,0,.07), 0 1px 2px rgba(0,0,0,.05);
+  --shadow-md:  0 4px 8px -1px rgba(0,0,0,.08), 0 2px 4px -1px rgba(0,0,0,.04);
+  --radius:     10px;
+}
+/* ─── Tokens: modo oscuro ────────────────────────── */
+[data-theme="dark"] {
+  --bg:         #0F172A;
+  --surface:    #1E293B;
+  --border:     #334155;
+  --txt:        #F1F5F9;
+  --txt-muted:  #94A3B8;
+  --ok:         #22C55E;
+  --ok-bg:      rgba(34,197,94,.15);
+  --warn:       #FBBF24;
+  --warn-bg:    rgba(251,191,36,.15);
+  --err:        #F87171;
+  --err-bg:     rgba(248,113,113,.15);
+  --accent:     #60A5FA;
+  --accent-bg:  rgba(96,165,250,.15);
+  --shadow-sm:  0 1px 3px rgba(0,0,0,.25);
+  --shadow-md:  0 4px 8px -1px rgba(0,0,0,.35);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font: 15px/1.6 'Inter', system-ui, sans-serif;
+  background: var(--bg); color: var(--txt);
+  transition: background .2s, color .2s;
+  min-height: 100dvh;
+}
+
+/* ─── Header ─────────────────────────────────────── */
+.app-header {
+  position: sticky; top: 0; z-index: 40;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+.header-inner {
+  max-width: 1200px; margin: 0 auto;
+  display: flex; align-items: center; gap: 12px;
+  height: 58px; padding: 0 20px;
+}
+.app-logo { font-size: 16px; font-weight: 700; letter-spacing: -.02em; }
+.app-logo span { color: var(--accent); }
+.spacer { flex: 1; }
+
+/* ─── Tabs ───────────────────────────────────────── */
+.tabs-nav {
+  display: flex; gap: 2px;
+  background: var(--bg);
+  border-radius: 8px; padding: 3px;
+}
+.tab-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--txt-muted);
+  font: 500 13px/1 'Inter', system-ui;
+  padding: 6px 14px; border-radius: 6px;
+  transition: background .15s, color .15s;
+  white-space: nowrap; display: flex; align-items: center; gap: 6px;
+}
+.tab-btn.active {
+  background: var(--surface); color: var(--txt);
+  box-shadow: var(--shadow-sm);
+}
+.tab-btn:hover:not(.active) { color: var(--txt); }
+
+/* ─── Theme toggle ───────────────────────────────── */
+.btn-icon {
+  background: none; border: 1px solid var(--border); cursor: pointer;
+  color: var(--txt-muted); border-radius: 8px;
+  width: 36px; height: 36px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .15s, color .15s;
+  flex-shrink: 0;
+}
+.btn-icon:hover { background: var(--bg); color: var(--txt); }
+
+/* ─── Main layout ────────────────────────────────── */
+main { max-width: 1200px; margin: 0 auto; padding: 24px 20px; }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+/* ─── Monitor tab ────────────────────────────────── */
+.monitor-bar {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 20px; flex-wrap: wrap;
+}
+.monitor-info { font-size: 13px; color: var(--txt-muted); }
+.monitor-info strong { color: var(--txt); }
+
+/* ─── UPS Card ───────────────────────────────────── */
+.ups-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 16px 20px; margin-bottom: 16px;
+  animation: slideUp 200ms ease-out;
+}
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.ups-card-header {
+  display: flex; align-items: flex-start;
+  justify-content: space-between; gap: 12px; margin-bottom: 16px;
+}
+.ups-card-title { display: flex; align-items: flex-start; gap: 10px; }
+.status-dot {
+  width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
+  background: var(--txt-muted); transition: background .4s; margin-top: 5px;
+}
+.status-dot.ok   { background: var(--ok); }
+.status-dot.warn { background: var(--warn); }
+.status-dot.err  { background: var(--err); }
+.ups-name-block { min-width: 0; }
+.ups-name  { font-size: 16px; font-weight: 600; line-height: 1.3; }
+.ups-sub   {
+  font-size: 12px; color: var(--txt-muted); margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ups-card-right {
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.ups-updated { font-size: 11px; color: var(--txt-muted); }
+
+/* Badges */
+.badge {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 999px;
+  font-size: 12px; font-weight: 600;
+}
+.badge-ok   { background: var(--ok-bg);   color: var(--ok); }
+.badge-warn { background: var(--warn-bg); color: var(--warn); }
+.badge-err  { background: var(--err-bg);  color: var(--err); }
+
+/* Remove button in card */
+.btn-remove {
+  background: none; border: 1px solid var(--border);
+  color: var(--txt-muted); cursor: pointer;
+  padding: 4px 10px; border-radius: 6px;
+  font: 13px/1 'Inter', system-ui;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.btn-remove:hover { color: var(--err); border-color: var(--err); background: var(--err-bg); }
+
+/* Widgets */
+.widgets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+  gap: 10px; margin-bottom: 16px;
+}
+.widget {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px;
+}
+.widget-label {
+  font-size: 11px; font-weight: 600; color: var(--txt-muted);
+  text-transform: uppercase; letter-spacing: .04em; margin-bottom: 5px;
+}
+.widget-value { font-size: 22px; font-weight: 700; line-height: 1.1; }
+.widget-unit  { font-size: 13px; font-weight: 400; color: var(--txt-muted); }
+
+/* Chart */
+.ups-chart { margin-bottom: 14px; }
+
+/* Variables accordion */
+.vars-btn {
+  display: flex; align-items: center; gap: 6px;
+  background: none; border: none; cursor: pointer;
+  color: var(--accent); font: 500 13px/1 'Inter', system-ui;
+  padding: 4px 0; transition: color .15s;
+}
+.vars-btn:hover { color: var(--txt); }
+.vars-btn svg { transition: transform .2s; flex-shrink: 0; }
+.vars-btn.open svg { transform: rotate(90deg); }
+.vars-table-wrap { display: none; margin-top: 10px; }
+.vars-table-wrap.open { display: block; }
+.vars-table {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+}
+.vars-table td {
+  padding: 5px 8px; border-bottom: 1px solid var(--border);
+}
+.vars-table td:first-child {
+  color: var(--txt-muted); width: 30%;
+  font: 12px/1.5 ui-monospace, 'Courier New', monospace;
+}
+.vars-table tr:last-child td { border-bottom: none; }
+
+/* Error banners in monitor */
+.err-banner {
+  background: var(--err-bg); border: 1px solid var(--err);
+  color: var(--err); border-radius: 8px;
+  padding: 10px 14px; margin-bottom: 12px; font-size: 13px;
+}
+
+/* Empty state */
+.empty-state {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); text-align: center;
+  padding: 60px 24px; box-shadow: var(--shadow-sm);
+}
+.empty-state h2 { font-size: 18px; margin-bottom: 10px; }
+.empty-state p  { font-size: 14px; color: var(--txt-muted); margin-bottom: 6px; }
+.inline-code {
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 7px;
+  font: 12px/1.6 ui-monospace, monospace;
+}
+.btn-goto-equipos {
+  display: inline-block; margin-top: 16px;
+  background: var(--accent); color: #fff; border: none; cursor: pointer;
+  padding: 9px 20px; border-radius: 7px;
+  font: 600 14px/1 'Inter', system-ui;
+  transition: opacity .15s;
+}
+.btn-goto-equipos:hover { opacity: .9; }
+
+/* ─── Equipos tab ────────────────────────────────── */
+.section-head {
+  font-size: 14px; font-weight: 600; color: var(--txt-muted);
+  text-transform: uppercase; letter-spacing: .05em;
+  margin-bottom: 12px;
+}
+
+.add-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px 22px;
+  box-shadow: var(--shadow-sm); margin-bottom: 28px;
+}
+.add-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.7fr 1.3fr auto;
+  gap: 12px; align-items: end;
+}
+@media (max-width: 768px) { .add-grid { grid-template-columns: 1fr; } }
+
+.form-group { display: flex; flex-direction: column; gap: 5px; }
+.form-label {
+  font-size: 11px; font-weight: 600; color: var(--txt-muted);
+  text-transform: uppercase; letter-spacing: .05em;
+}
+.form-input {
+  background: var(--bg); border: 1px solid var(--border);
+  color: var(--txt); padding: 9px 12px; border-radius: 7px;
+  font: 14px/1 'Inter', system-ui;
+  transition: border-color .15s, box-shadow .15s; width: 100%;
+}
+.form-input:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+.form-input::placeholder { color: var(--txt-muted); }
+
+.btn-primary {
+  background: var(--accent); border: none; color: #fff;
+  padding: 9px 20px; border-radius: 7px;
+  font: 600 14px/1 'Inter', system-ui;
+  cursor: pointer; transition: opacity .15s; white-space: nowrap;
+}
+.btn-primary:hover { opacity: .9; }
+.btn-primary:disabled { opacity: .38; cursor: not-allowed; }
+
+/* Configured SAIs list */
+.equipos-list {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+.equipo-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  transition: background .15s;
+}
+.equipo-row:last-child { border-bottom: none; }
+.equipo-row:hover { background: var(--bg); }
+.equipo-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  background: var(--txt-muted); transition: background .4s;
+}
+.equipo-dot.ok   { background: var(--ok); }
+.equipo-dot.warn { background: var(--warn); }
+.equipo-dot.err  { background: var(--err); }
+.equipo-info  { flex: 1; min-width: 0; }
+.equipo-label { font-size: 14px; font-weight: 600; }
+.equipo-url   {
+  font-size: 12px; color: var(--txt-muted);
+  font-family: ui-monospace, monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.btn-danger {
+  background: none; border: 1px solid var(--border); color: var(--txt-muted);
+  cursor: pointer; padding: 5px 12px; border-radius: 6px;
+  font: 13px/1 'Inter', system-ui; flex-shrink: 0;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.btn-danger:hover { color: var(--err); border-color: var(--err); background: var(--err-bg); }
+
+.equipos-empty {
+  padding: 36px 24px; text-align: center;
+  color: var(--txt-muted); font-size: 14px;
+}
+
+/* Botón Editar en fila de equipo */
+.btn-edit {
+  background: none; border: 1px solid var(--border);
+  color: var(--txt-muted); cursor: pointer;
+  padding: 5px 12px; border-radius: 6px;
+  font: 13px/1 'Inter', system-ui; flex-shrink: 0;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.btn-edit:hover  { color: var(--accent); border-color: var(--accent); background: var(--accent-bg); }
+.btn-edit:active { background: var(--accent-bg); opacity: .8; }
+
+/* Fila en modo edición */
+.equipo-edit-row {
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  background: var(--accent-bg);
+}
+.equipo-edit-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr 1.2fr auto;
+  gap: 10px; align-items: end;
+}
+@media (max-width: 768px) { .equipo-edit-grid { grid-template-columns: 1fr; } }
+.equipo-edit-actions { display: flex; gap: 8px; }
+.btn-primary.btn-sm { padding: 7px 14px; font-size: 13px; }
+.btn-ghost.btn-sm   { padding: 7px 14px; font-size: 13px; }
+.btn-ghost {
+  background: none; border: 1px solid var(--border);
+  color: var(--txt); cursor: pointer;
+  padding: 7px 14px; border-radius: 7px;
+  font: 13px/1 'Inter', system-ui;
+  transition: background .15s, border-color .15s;
+}
+.btn-ghost:hover  { background: var(--bg); border-color: var(--txt-muted); }
+.btn-ghost:active { background: var(--bg); opacity: .8; }
+
+/* ─── Touch & interaction ───────────────────────── */
+button { touch-action: manipulation; }
+
+.btn-primary:active  { opacity: .8; transform: scale(.98); }
+.btn-goto-equipos:active { opacity: .8; transform: scale(.98); }
+.btn-remove:active   { background: var(--err-bg); }
+.btn-danger:active   { background: var(--err-bg); }
+.tab-btn:active:not(.active) { background: color-mix(in srgb, var(--surface) 60%, var(--bg)); }
+
+/* ─── Focus visible ─────────────────────────────── */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.form-input:focus-visible { outline: none; }
+
+/* ─── Tab panel entrance ─────────────────────────── */
+@keyframes tabIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: none; }
+}
+.tab-panel.active { animation: tabIn .15s ease-out; }
+
+/* ─── Alert banners dentro de tarjeta ───────────── */
+.alert-strip { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.alert-strip:empty { display: none; margin: 0; }
+.alert-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-radius: 7px;
+  font-size: 13px; font-weight: 500; line-height: 1.3;
+}
+.alert-item svg { flex-shrink: 0; }
+.alert-err  { background: var(--err-bg);  color: var(--err);  border: 1px solid var(--err); }
+.alert-warn { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn); }
+
+/* ─── Tabla de variables mejorada ───────────────── */
+.vars-table thead th {
+  font: 600 11px/1.4 'Inter', system-ui;
+  text-transform: uppercase; letter-spacing: .04em;
+  color: var(--txt-muted); padding: 7px 8px;
+  border-bottom: 2px solid var(--border); text-align: left;
+}
+.vars-table td:nth-child(2) {
+  font: 500 13px/1.4 'Inter', system-ui;
+}
+.vars-table td:nth-child(3) {
+  font-size: 12px; color: var(--txt-muted);
+}
+.vars-table tr.row-crit td { background: var(--err-bg); }
+.vars-table tr.row-warn td { background: var(--warn-bg); }
+.vars-table td.val-crit { color: var(--err); font-weight: 600; }
+.vars-table td.val-warn { color: var(--warn); font-weight: 600; }
+
+@media (max-width: 600px) {
+  .vars-table thead th:nth-child(3),
+  .vars-table td:nth-child(3) { display: none; }
+}
+
+/* ─── Reduced motion ─────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    transition-duration: .01ms !important;
+  }
+}
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="header-inner">
+    <div class="app-logo">Monitor <span>SAI</span></div>
+    <nav class="tabs-nav" id="tabs-nav" role="tablist">
+      <button class="tab-btn active" data-tab="monitor" role="tab" aria-selected="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+        Monitorización
+      </button>
+      <button class="tab-btn" data-tab="equipos" role="tab" aria-selected="false">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+        Equipos
+      </button>
+    </nav>
+    <div class="spacer"></div>
+    <button class="btn-icon" id="btn-theme" title="Cambiar tema claro / oscuro" aria-label="Cambiar tema">
+      <svg id="icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      <svg id="icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main>
+  <!-- ── Tab: Monitorización ── -->
+  <div class="tab-panel active" id="tab-monitor" role="tabpanel">
+    <div class="monitor-bar">
+      <div class="monitor-info">
+        <strong id="equipo-count">Sin equipos</strong>
+        <span> · Actualización automática cada <strong>5 s</strong></span>
+      </div>
+    </div>
+    <div id="monitor-panels"></div>
+    <div id="monitor-empty" style="display:none">
+      <div class="empty-state">
+        <h2>No hay SAIs configurados</h2>
+        <p>Ve a la pestaña <strong>Equipos</strong> para añadir tu SAI.</p>
+        <p>Necesitas la URL del puente <span class="inline-code">http://IP_PI:8080</span> y el token de acceso.</p>
+        <button class="btn-goto-equipos" id="btn-goto-equipos">Ir a Equipos</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tab: Equipos ── -->
+  <div class="tab-panel" id="tab-equipos" role="tabpanel">
+    <div class="section-head">Añadir nuevo SAI</div>
+    <div class="add-card">
+      <div class="add-grid">
+        <div class="form-group">
+          <label class="form-label" for="f-label">Nombre o etiqueta</label>
+          <input class="form-input" id="f-label" placeholder="Rack del salón" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="f-url">URL del puente SAI</label>
+          <input class="form-input" id="f-url" placeholder="http://192.168.0.140:8080" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="f-token">Token de acceso</label>
+          <input class="form-input" id="f-token" type="password" placeholder="Token generado en la Pi" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <button class="btn-primary" id="btn-add" disabled>Añadir SAI</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-head">SAIs configurados</div>
+    <div id="equipos-list-wrap"></div>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.31/dist/uPlot.iife.min.js"></script>
+<script>
+/* ─── Constantes ────────────────────────────────── */
+const STORE_KEY      = "sai_equipos_v1";
+const STORE_THEME    = "sai_theme";
+const REFRESH_MS     = 5000;
+const SLOW_MS        = 30000;
+const FAIL_THRESHOLD = 3;
+const MAX_POINTS     = 240;
+
+/* ─── Estado ─────────────────────────────────────── */
+const hist         = {};
+const charts       = {};
+const failCount    = {};
+const connStatus   = {};
+const lastPollTime = {};
+
+/* ─── Persistencia ──────────────────────────────── */
+function loadEquipos(){ try{ return JSON.parse(localStorage.getItem(STORE_KEY))||[]; }catch{ return []; } }
+function saveEquipos(l){ localStorage.setItem(STORE_KEY, JSON.stringify(l)); }
+
+/* ─── Tema claro / oscuro ────────────────────────── */
+function applyTheme(t){
+  document.documentElement.setAttribute("data-theme", t);
+  localStorage.setItem(STORE_THEME, t);
+  document.getElementById("icon-sun").style.display  = t === "dark" ? "block" : "none";
+  document.getElementById("icon-moon").style.display = t === "light" ? "block" : "none";
+  /* Destruir gráficas para que se reconstruyan con los colores del nuevo tema */
+  Object.keys(charts).forEach(function(k){
+    if(charts[k] && charts[k].destroy) charts[k].destroy();
+    delete charts[k];
+  });
+}
+(function(){
+  var saved = localStorage.getItem(STORE_THEME) || "light";
+  applyTheme(saved);
+})();
+document.getElementById("btn-theme").addEventListener("click", function(){
+  var cur = document.documentElement.getAttribute("data-theme");
+  applyTheme(cur === "dark" ? "light" : "dark");
+});
+
+/* ─── Navegación por pestañas ────────────────────── */
+function switchTab(tabId){
+  document.querySelectorAll(".tab-btn").forEach(function(b){
+    var active = b.dataset.tab === tabId;
+    b.classList.toggle("active", active);
+    b.setAttribute("aria-selected", String(active));
+  });
+  document.querySelectorAll(".tab-panel").forEach(function(p){
+    p.classList.toggle("active", p.id === "tab-"+tabId);
+  });
+}
+document.getElementById("tabs-nav").addEventListener("click", function(e){
+  var btn = e.target.closest(".tab-btn");
+  if(btn) switchTab(btn.dataset.tab);
+});
+document.getElementById("btn-goto-equipos").addEventListener("click", function(){
+  switchTab("equipos");
+});
+
+/* ─── Badges de estado ───────────────────────────── */
+var STATUS_MAP = {
+  OL:     ["Funcionando con red",    "badge-ok"],
+  OB:     ["Usando batería",         "badge-warn"],
+  LB:     ["Batería baja",           "badge-err"],
+  CHRG:   ["Cargando batería",       "badge-ok"],
+  DISCHRG:["Descargando batería",    "badge-warn"],
+  RB:     ["Cambiar batería",        "badge-err"],
+  BYPASS: ["Modo bypass",            "badge-warn"],
+  OVER:   ["Sobrecarga",             "badge-err"],
+  OFF:    ["Apagado",                "badge-err"],
+  FSD:    ["Apagado de emergencia",  "badge-err"]
+};
+
+function statusBadges(raw){
+  return (raw||"").split(/\s+/).filter(Boolean).map(function(t){
+    var info = STATUS_MAP[t] || [t, "badge-warn"];
+    return '<span class="badge '+info[1]+'" title="Código NUT: '+t+'">'+info[0]+'</span>';
+  }).join(" ");
+}
+
+/* ─── Formateo ───────────────────────────────────── */
+function fmtRuntime(s){
+  s = +s; if(isNaN(s)) return s;
+  var h = Math.floor(s/3600), m = Math.floor(s%3600/60);
+  return h ? h+"h "+m+"m" : m+"m";
+}
+
+function estimaPotencia(v){
+  var load = parseFloat(v["ups.load"]);
+  var nom  = parseFloat(v["ups.realpower.nominal"]);
+  if(!isNaN(load) && !isNaN(nom)) return Math.round(load/100*nom)+"W (est.)";
+  return null;
+}
+
+function valueColor(key, raw){
+  var n = parseFloat(raw);
+  if(isNaN(n)) return "";
+  var t = VAR_THRESHOLDS[key];
+  if(t){
+    if((t.critBelow !== undefined && n < t.critBelow) ||
+       (t.critAbove !== undefined && n > t.critAbove)) return "color:var(--err)";
+    if((t.warnBelow !== undefined && n < t.warnBelow) ||
+       (t.warnAbove !== undefined && n > t.warnAbove)) return "color:var(--warn)";
+  }
+  if(key === "battery.charge" && n >= 50) return "color:var(--ok)";
+  return "";
+}
+
+/* ─── Descripciones de variables NUT ────────────── */
+var VAR_DESCRIPTIONS = {
+  "battery.charge":           "Nivel de carga actual (%)",
+  "battery.charge.low":       "Umbral mínimo de batería (%)",
+  "battery.charge.warning":   "Umbral de aviso de batería (%)",
+  "battery.runtime":          "Autonomía restante (segundos)",
+  "battery.runtime.low":      "Autonomía mínima antes de apagar",
+  "battery.voltage":          "Tensión actual de la batería (V)",
+  "battery.voltage.nominal":  "Tensión nominal de la batería (V)",
+  "battery.temperature":      "Temperatura interna de la batería",
+  "ups.status":               "Estado operativo del SAI",
+  "ups.load":                 "Carga respecto al máximo (%)",
+  "ups.realpower":            "Potencia real consumida (W)",
+  "ups.realpower.nominal":    "Potencia nominal máxima del SAI (W)",
+  "ups.temperature":          "Temperatura interna del SAI (°C)",
+  "input.voltage":            "Tensión de red de entrada (V)",
+  "input.voltage.nominal":    "Tensión nominal de red esperada (V)",
+  "output.voltage":           "Tensión de salida al equipo (V)",
+  "device.model":             "Modelo del dispositivo SAI",
+  "device.mfr":               "Fabricante del SAI",
+  "device.serial":            "Número de serie del dispositivo",
+  "ups.firmware":             "Versión de firmware del SAI",
+  "driver.name":              "Driver NUT utilizado",
+  "driver.version":           "Versión del driver NUT",
+  "driver.version.internal":  "Versión interna del driver",
+  "ups.mfr":                  "Fabricante del SAI (vía UPS)",
+  "ups.model":                "Modelo del SAI (vía UPS)",
+  "ups.serial":               "Número de serie (vía UPS)",
+  "ups.vendorid":             "ID de fabricante USB",
+  "ups.productid":            "ID de producto USB"
+};
+
+/* ─── Umbrales para colorear valores ─────────────── */
+var VAR_THRESHOLDS = {
+  "battery.charge":     { warnBelow: 50,  critBelow: 20 },
+  "battery.runtime":    { warnBelow: 600, critBelow: 180 },
+  "ups.load":           { warnAbove: 60,  critAbove: 80 },
+  "ups.temperature":    { warnAbove: 40,  critAbove: 50 },
+  "battery.temperature":{ warnAbove: 40,  critAbove: 50 },
+  "input.voltage":      { warnBelow: 210, critBelow: 200, warnAbove: 240, critAbove: 250 }
+};
+
+function varRowLevel(key, val){
+  var n = parseFloat(val);
+  if(isNaN(n)) return "";
+  var t = VAR_THRESHOLDS[key];
+  if(!t) return "";
+  if((t.critBelow !== undefined && n < t.critBelow) ||
+     (t.critAbove !== undefined && n > t.critAbove)) return "crit";
+  if((t.warnBelow !== undefined && n < t.warnBelow) ||
+     (t.warnAbove !== undefined && n > t.warnAbove)) return "warn";
+  return "";
+}
+
+/* ─── Alertas en tarjeta ─────────────────────────── */
+function alertHtml(level, msg){
+  var icon = level === "err"
+    ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>'
+    : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+  return '<div class="alert-item alert-'+level+'">'+icon+escHtml(msg)+'</div>';
+}
+
+function renderAlerts(id, v){
+  var container = document.getElementById("alerts-"+id);
+  if(!container) return;
+  var html = "";
+  var statusFlags = (v["ups.status"] || "").split(/\s+/);
+
+  if(statusFlags.indexOf("RB") !== -1)
+    html += alertHtml("err", "Batería dañada — debe ser reemplazada");
+
+  var bv  = parseFloat(v["battery.voltage"]);
+  var bvn = parseFloat(v["battery.voltage.nominal"]);
+  if(!isNaN(bv) && !isNaN(bvn) && bvn > 0 && (bv/bvn) < 0.88 && statusFlags.indexOf("RB") === -1)
+    html += alertHtml("err", "Posible deterioro de batería (tensión baja)");
+
+  var charge = parseFloat(v["battery.charge"]);
+  if(!isNaN(charge)){
+    if(charge < 20)      html += alertHtml("err",  "Batería crítica — "+charge+"% de carga restante");
+    else if(charge < 50) html += alertHtml("warn", "Batería baja — "+charge+"% de carga");
+  }
+
+  var load = parseFloat(v["ups.load"]);
+  if(!isNaN(load) && load > 80)
+    html += alertHtml("warn", "Carga elevada — "+load+"% del máximo");
+
+  container.innerHTML = html;
+}
+
+/* ─── Definición de widgets ──────────────────────── */
+var WIDGETS = [
+  ["battery.charge",          "Carga de batería",          "%",  null],
+  ["battery.runtime",         "Tiempo restante",           "",   fmtRuntime],
+  ["ups.load",                "Consumo UPS",               "%",  null],
+  ["ups.realpower",           "Potencia real",             "W",  null],
+  ["input.voltage",           "Tensión entrada",           "V",  null],
+  ["output.voltage",          "Tensión salida",            "V",  null],
+  ["battery.voltage",         "Tensión batería",           "V",  null],
+  ["ups.temperature",         "Temperatura SAI",           "°C", null],
+  ["input.frequency",         "Frecuencia de red",         "Hz", null],
+  ["output.frequency",        "Frecuencia de salida",      "Hz", null],
+  ["output.current",          "Corriente de salida",       "A",  null],
+  ["battery.charge.low",      "Nivel mínimo de batería",   "%",  null],
+  ["battery.voltage.nominal", "Tensión nominal batería",   "V",  null],
+  ["ups.delay.shutdown",      "Retardo de apagado",        "s",  null],
+  ["ups.delay.start",         "Retardo de arranque",       "s",  null],
+  ["ups.efficiency",          "Eficiencia del SAI",        "%",  null],
+  ["ambient.temperature",     "Temperatura ambiente",      "°C", null],
+  ["ambient.humidity",        "Humedad ambiente",          "%",  null],
+];
+
+/* ─── Renderizado de panel UPS ───────────────────── */
+function renderUPS(equipoId, equipoLabel, upsName, data){
+  var id = equipoId+"--"+upsName;
+  var v  = data.vars || {};
+
+  var hwModel = [v["device.mfr"], v["device.model"]].filter(Boolean).join(" ") ||
+                v["ups.model"] || upsName;
+  var serial  = v["device.serial"] || v["ups.serial"] || "";
+
+  /* Crear card si no existe */
+  var card = document.getElementById("ups-card-"+id);
+  if(!card){
+    card = document.createElement("div");
+    card.className = "ups-card";
+    card.id = "ups-card-"+id;
+    card.innerHTML =
+      '<div class="ups-card-header">'+
+        '<div class="ups-card-title">'+
+          '<span class="status-dot" id="sdot-'+id+'"></span>'+
+          '<div class="ups-name-block">'+
+            '<div class="ups-name" id="uname-'+id+'"></div>'+
+            '<div class="ups-sub"  id="usub-'+id+'"></div>'+
+          '</div>'+
+        '</div>'+
+        '<div class="ups-card-right">'+
+          '<span class="ups-updated" id="upd-'+id+'"></span>'+
+          '<div id="ubadges-'+id+'"></div>'+
+          '<button class="btn-remove" data-eid="'+equipoId+'" title="Eliminar este equipo">Eliminar</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="alert-strip" id="alerts-'+id+'"></div>'+
+      '<div class="widgets" id="wg-'+id+'"></div>'+
+      '<div class="ups-chart" id="ch-'+id+'"></div>'+
+      '<button class="vars-btn" id="vbtn-'+id+'">'+
+        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>'+
+        '<span id="vlabel-'+id+'">Ver todas las variables</span>'+
+      '</button>'+
+      '<div class="vars-table-wrap" id="vtbl-'+id+'">'+
+        '<table class="vars-table">'+
+          '<thead><tr>'+
+            '<th>Variable NUT</th>'+
+            '<th>Valor</th>'+
+            '<th>Descripción</th>'+
+          '</tr></thead>'+
+          '<tbody id="vtbody-'+id+'"></tbody>'+
+        '</table>'+
+      '</div>';
+    document.getElementById("monitor-panels").appendChild(card);
+
+    /* Toggle variables */
+    document.getElementById("vbtn-"+id).addEventListener("click", function(){
+      this.classList.toggle("open");
+      document.getElementById("vtbl-"+id).classList.toggle("open");
+    });
+  }
+
+  /* Actualizar contenido */
+  var dot = document.getElementById("sdot-"+id);
+  if(dot) dot.className = "status-dot "+(connStatus[equipoId]||"ok");
+
+  document.getElementById("uname-"+id).textContent = equipoLabel;
+  document.getElementById("usub-"+id).textContent =
+    hwModel + " · " + upsName + (serial ? " · S/N " + serial : "");
+  document.getElementById("ubadges-"+id).innerHTML = statusBadges(v["ups.status"]);
+  document.getElementById("upd-"+id).textContent   = "↻ " + new Date().toLocaleTimeString();
+  renderAlerts(id, v);
+
+  /* Widgets */
+  var statusFlagsW = (v["ups.status"] || "").split(/\s+/);
+  var runtimeLabel = "Tiempo estimado de batería";
+  var runtimeTitle = "";
+  if(statusFlagsW.indexOf("CHRG") !== -1){
+    runtimeLabel = "Tiempo hasta carga completa";
+    runtimeTitle = "Minutos que faltan para que la batería llegue al 100%";
+  } else if(statusFlagsW.indexOf("OB") !== -1 || statusFlagsW.indexOf("DISCHRG") !== -1){
+    runtimeLabel = "Autonomía disponible";
+    runtimeTitle = "Tiempo que aguantaría el equipo si se va la luz ahora mismo";
+  }
+
+  var whtml = "";
+  WIDGETS.forEach(function(w){
+    var k=w[0], lbl=w[1], unit=w[2], fn=w[3];
+    if(v[k] === undefined) return;
+    var raw = v[k];
+    var val = fn ? fn(raw) : raw;
+    if(k === "ups.load" && parseFloat(raw) === 0 && v["ups.realpower.nominal"]) val = "< 1";
+    var col = valueColor(k, raw);
+    var label     = (k === "battery.runtime") ? runtimeLabel : lbl;
+    var titleAttr = (k === "battery.runtime" && runtimeTitle) ? ' title="'+runtimeTitle+'"' : '';
+    whtml += '<div class="widget"'+titleAttr+'>'+
+      '<div class="widget-label">'+label+'</div>'+
+      '<div class="widget-value"'+(col?' style="'+col+'"':'')+'>'+
+        val+'<span class="widget-unit"> '+unit+'</span>'+
+      '</div></div>';
+  });
+  if(v["ups.realpower"] === undefined){
+    var est = estimaPotencia(v);
+    if(est) whtml += '<div class="widget"><div class="widget-label">Potencia (est.)</div>'+
+      '<div class="widget-value">'+est+'</div></div>';
+  }
+  document.getElementById("wg-"+id).innerHTML =
+    whtml || '<span style="color:var(--txt-muted);font-size:13px">Sin métricas conocidas — ver tabla completa.</span>';
+
+  /* Tabla de variables */
+  var tbody = document.getElementById("vtbody-"+id);
+  if(tbody){
+    var thtml = "";
+    Object.keys(v).sort().forEach(function(k){
+      var val   = v[k];
+      var level = varRowLevel(k, val);
+      var rowCls = level === "crit" ? ' class="row-crit"' : level === "warn" ? ' class="row-warn"' : "";
+      var valCls = level === "crit" ? ' class="val-crit"' : level === "warn" ? ' class="val-warn"' : "";
+      var desc  = VAR_DESCRIPTIONS[k] || "";
+      thtml += '<tr'+rowCls+'>'+
+        '<td>'+escHtml(k)+'</td>'+
+        '<td'+valCls+'>'+escHtml(val)+'</td>'+
+        '<td>'+escHtml(desc)+'</td>'+
+      '</tr>';
+    });
+    tbody.innerHTML = thtml;
+    document.getElementById("vlabel-"+id).textContent =
+      "Ver todas las variables (" + Object.keys(v).length + ")";
+  }
+
+  /* Historial gráfica */
+  var h = hist[id] || (hist[id] = { t:[], charge:[], load:[] });
+  h.t.push(Date.now()/1000);
+  h.charge.push(parseFloat(v["battery.charge"] != null ? v["battery.charge"] : NaN));
+  h.load.push(parseFloat(v["ups.load"]         != null ? v["ups.load"]        : NaN));
+  if(h.t.length > MAX_POINTS){ h.t.shift(); h.charge.shift(); h.load.shift(); }
+  drawChart(id, h);
+}
+
+/* ─── Gráfica uPlot ──────────────────────────────── */
+function cursorToEnd(u, t){
+  if(!u || t.length < 2) return;
+  requestAnimationFrame(function(){
+    var x = u.valToPos(t[t.length-1], "x");
+    u.setCursor({ left: x, top: u.bbox.height / 2 / devicePixelRatio });
+  });
+}
+
+function chartColors(){
+  var dark = document.documentElement.getAttribute("data-theme") === "dark";
+  return {
+    ok:     dark ? "#22C55E" : "#16A34A",
+    accent: dark ? "#60A5FA" : "#2563EB",
+    grid:   dark ? "#334155" : "#E2E8F0",
+    axis:   dark ? "#94A3B8" : "#64748B",
+  };
+}
+
+function drawChart(id, h){
+  var el = document.getElementById("ch-"+id);
+  if(!el) return;
+  var mkData = function(){ return [h.t.slice(), h.charge.slice(), h.load.slice()]; };
+
+  if(charts[id]){
+    charts[id].setData(mkData());
+    cursorToEnd(charts[id], h.t);
+    return;
+  }
+
+  requestAnimationFrame(function(){
+    if(charts[id]) return;
+    var c = chartColors();
+    var w = el.clientWidth || 600;
+    charts[id] = new uPlot({
+      width: w, height: 150,
+      scales: { y: { range: [0, 100] } },
+      series: [
+        {},
+        { label: "Carga batería %", stroke: c.ok,     width: 2 },
+        { label: "Consumo UPS %",   stroke: c.accent,  width: 2 },
+      ],
+      axes: [
+        { stroke: c.axis, grid: { stroke: c.grid } },
+        { stroke: c.axis, grid: { stroke: c.grid } },
+      ],
+    }, mkData(), el);
+    cursorToEnd(charts[id], h.t);
+  });
+}
+
+/* ─── Polling ────────────────────────────────────── */
+async function fetchJSON(url, token, signal){
+  var r = await fetch(url, { headers: { Authorization: "Bearer "+token }, signal });
+  if(r.status === 401) throw new Error("Token inválido — comprueba la configuración");
+  if(!r.ok) throw new Error("Error HTTP " + r.status);
+  return r.json();
+}
+
+async function pollEquipo(eq){
+  var base = eq.url.replace(/\/+$/, "");
+  var ctrl = new AbortController();
+  var to   = setTimeout(function(){ ctrl.abort(); }, 4000);
+  try{
+    var lista = await fetchJSON(base+"/api/ups", eq.token, ctrl.signal);
+    failCount[eq.id]  = 0;
+    connStatus[eq.id] = "ok";
+    updateDots(eq.id, "ok");
+    clearErrBanner(eq.id);
+    for(var i = 0; i < lista.length; i++){
+      var ups  = lista[i];
+      var data = await fetchJSON(base+"/api/ups/"+encodeURIComponent(ups.name), eq.token, ctrl.signal);
+      renderUPS(eq.id, eq.label, ups.name, data);
+    }
+  }catch(e){
+    var fc = (failCount[eq.id]||0) + 1;
+    failCount[eq.id]  = fc;
+    var st = fc >= FAIL_THRESHOLD ? "err" : "warn";
+    connStatus[eq.id] = st;
+    updateDots(eq.id, st);
+    showErrBanner(eq, e.message, fc);
+  }finally{
+    clearTimeout(to);
+  }
+}
+
+function updateDots(equipoId, status){
+  /* Puntos en tarjetas de monitor */
+  document.querySelectorAll('[id^="sdot-'+equipoId+'--"]').forEach(function(el){
+    el.className = "status-dot " + status;
+  });
+  /* Punto en fila de la lista de equipos */
+  var ldot = document.getElementById("ldot-"+equipoId);
+  if(ldot) ldot.className = "equipo-dot " + status;
+}
+
+function showErrBanner(eq, msg, fc){
+  var el = document.getElementById("err-"+eq.id);
+  if(!el){
+    el = document.createElement("div");
+    el.className = "err-banner"; el.id = "err-"+eq.id;
+    document.getElementById("monitor-panels").prepend(el);
+  }
+  var slow = fc >= FAIL_THRESHOLD ? " · reintentando cada 30 s" : "";
+  el.textContent = "Sin conexión · " + eq.label + " (" + eq.url + "): " + msg + slow;
+}
+function clearErrBanner(id){
+  var el = document.getElementById("err-"+id); if(el) el.remove();
+}
+
+/* ─── Eliminar equipo ────────────────────────────── */
+function removeEquipo(equipoId){
+  if(!confirm("¿Eliminar este equipo de la lista?")) return;
+  var list = loadEquipos().filter(function(e){ return e.id !== equipoId; });
+  saveEquipos(list);
+
+  document.querySelectorAll('[id^="ups-card-'+equipoId+'--"]').forEach(function(el){ el.remove(); });
+  clearErrBanner(equipoId);
+
+  Object.keys(hist).forEach(function(k){
+    if(k.indexOf(equipoId+"--") === 0) delete hist[k];
+  });
+  Object.keys(charts).forEach(function(k){
+    if(k.indexOf(equipoId+"--") === 0){
+      if(charts[k] && charts[k].destroy) charts[k].destroy();
+      delete charts[k];
+    }
+  });
+  delete failCount[equipoId];
+  delete connStatus[equipoId];
+  delete lastPollTime[equipoId];
+
+  renderEquiposList();
+  updateUI();
+}
+
+/* Delegación para botones "Eliminar" en tarjetas monitor */
+document.getElementById("monitor-panels").addEventListener("click", function(e){
+  var btn = e.target.closest(".btn-remove");
+  if(!btn) return;
+  removeEquipo(btn.dataset.eid);
+});
+
+/* ─── Lista de equipos (pestaña Equipos) ─────────── */
+function renderEquiposList(){
+  var list = loadEquipos();
+  var wrap = document.getElementById("equipos-list-wrap");
+  if(!list.length){
+    wrap.innerHTML = '<div class="equipos-list"><div class="equipos-empty">No hay SAIs añadidos aún.</div></div>';
+    return;
+  }
+  var rows = list.map(function(eq){
+    var st = connStatus[eq.id] || "";
+    return '<div class="equipo-row" id="erow-'+eq.id+'">'+
+      '<span class="equipo-dot '+st+'" id="ldot-'+eq.id+'"></span>'+
+      '<div class="equipo-info">'+
+        '<div class="equipo-label">'+escHtml(eq.label)+'</div>'+
+        '<div class="equipo-url">'+escHtml(eq.url)+'</div>'+
+      '</div>'+
+      '<button class="btn-edit" data-eid="'+eq.id+'">Editar</button>'+
+      '<button class="btn-danger" data-eid="'+eq.id+'">Eliminar</button>'+
+    '</div>';
+  }).join("");
+  wrap.innerHTML = '<div class="equipos-list">'+rows+'</div>';
+
+  wrap.querySelectorAll(".btn-edit").forEach(function(btn){
+    btn.addEventListener("click", function(){ editEquipo(this.dataset.eid); });
+  });
+  wrap.querySelectorAll(".btn-danger").forEach(function(btn){
+    btn.addEventListener("click", function(){ removeEquipo(this.dataset.eid); });
+  });
+}
+
+function editEquipo(equipoId){
+  var list = loadEquipos();
+  var eq   = list.find(function(e){ return e.id === equipoId; });
+  if(!eq) return;
+  var row = document.getElementById("erow-"+equipoId);
+  if(!row) return;
+
+  row.className = "equipo-edit-row";
+  row.innerHTML =
+    '<div class="equipo-edit-grid">'+
+      '<div class="form-group">'+
+        '<label class="form-label">Nombre</label>'+
+        '<input class="form-input" id="edit-label-'+equipoId+'" value="'+escHtml(eq.label)+'" placeholder="Nombre o etiqueta">'+
+      '</div>'+
+      '<div class="form-group">'+
+        '<label class="form-label">URL del puente SAI</label>'+
+        '<input class="form-input" id="edit-url-'+equipoId+'" value="'+escHtml(eq.url)+'" placeholder="http://...">'+
+      '</div>'+
+      '<div class="form-group">'+
+        '<label class="form-label">Token de acceso</label>'+
+        '<input class="form-input" id="edit-token-'+equipoId+'" type="password" placeholder="Dejar vacío para no cambiar">'+
+      '</div>'+
+      '<div class="equipo-edit-actions">'+
+        '<button class="btn-primary btn-sm" id="edit-save-'+equipoId+'">Guardar</button>'+
+        '<button class="btn-ghost btn-sm" id="edit-cancel-'+equipoId+'">Cancelar</button>'+
+      '</div>'+
+    '</div>';
+
+  document.getElementById("edit-save-"+equipoId).addEventListener("click", function(){
+    var newLabel = document.getElementById("edit-label-"+equipoId).value.trim();
+    var newUrl   = document.getElementById("edit-url-"+equipoId).value.trim();
+    var newToken = document.getElementById("edit-token-"+equipoId).value.trim();
+    if(!newUrl){ alert("La URL del puente SAI es obligatoria."); return; }
+    var idx = list.findIndex(function(e){ return e.id === equipoId; });
+    if(idx === -1) return;
+    list[idx].label = newLabel || list[idx].label;
+    list[idx].url   = newUrl;
+    if(newToken) list[idx].token = newToken;
+    saveEquipos(list);
+    renderEquiposList();
+  });
+
+  document.getElementById("edit-cancel-"+equipoId).addEventListener("click", function(){
+    renderEquiposList();
+  });
+}
+
+function escHtml(s){
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+/* ─── Formulario: añadir equipo ──────────────────── */
+function updateAddBtn(){
+  var url   = document.getElementById("f-url").value.trim();
+  var token = document.getElementById("f-token").value.trim();
+  document.getElementById("btn-add").disabled = (!url || !token);
+}
+document.getElementById("f-url").addEventListener("input",   updateAddBtn);
+document.getElementById("f-token").addEventListener("input", updateAddBtn);
+
+document.getElementById("btn-add").addEventListener("click", function(){
+  var label = document.getElementById("f-label").value.trim();
+  var url   = document.getElementById("f-url").value.trim();
+  var token = document.getElementById("f-token").value.trim();
+  if(!url || !token){ alert("La URL y el token son obligatorios."); return; }
+  var list = loadEquipos();
+  list.push({ id: uid(), label: label || url, url: url, token: token });
+  saveEquipos(list);
+  document.getElementById("f-label").value = "";
+  document.getElementById("f-url").value   = "";
+  document.getElementById("f-token").value = "";
+  updateAddBtn();
+  renderEquiposList();
+  updateUI();
+  tick();
+});
+
+/* ─── Tick de polling ────────────────────────────── */
+function tick(){
+  var now = Date.now();
+  loadEquipos().forEach(function(eq){
+    var fc   = failCount[eq.id]   || 0;
+    var last = lastPollTime[eq.id] || 0;
+    if(fc >= FAIL_THRESHOLD && (now - last) < SLOW_MS) return;
+    lastPollTime[eq.id] = now;
+    pollEquipo(eq);
+  });
+  updateUI();
+}
+
+/* ─── Estado global de la UI ─────────────────────── */
+function updateUI(){
+  var n = loadEquipos().length;
+  var counter = document.getElementById("equipo-count");
+  counter.textContent =
+    n === 0 ? "Sin equipos" :
+    n === 1 ? "1 equipo"    : n + " equipos";
+  document.getElementById("monitor-empty").style.display = n ? "none" : "block";
+}
+
+function uid(){ return Math.random().toString(36).slice(2, 9); }
+
+/* ─── Arranque ───────────────────────────────────── */
+updateAddBtn();
+renderEquiposList();
+updateUI();
+tick();
+setInterval(tick, REFRESH_MS);
+</script>
+</body>
+</html>

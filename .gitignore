@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Armbian OS image (too large for git)
+*.img.xz
+*.img
+
+# Agent memory
+ruvector.db
+
+# Claude Code session
+.claude/
+
+# Compiled binaries — only keep the distributed one in bridge/
+# (bridge/sai-monitor-arm64 is intentionally tracked)
+
+# Environment files with real tokens
+deploy/sai-monitor.env.local
+
+# Editor
+.vscode/
+.idea/

@@ -1,0 +1,4 @@
+# /etc/nut/upsd.users — permisos: 0640, root:nut
+[monitor]
+    password = CAMBIA_ESTA_CLAVE
+    upsmon primary
