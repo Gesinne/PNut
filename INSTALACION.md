@@ -247,6 +247,20 @@ chmod 600 /etc/sai-monitor/sai-monitor.env
 > Si tienes varios SAIs en la misma red, ponles nombres distintos
 > (ej. "SAI Salón", "SAI Rack", "SAI Garaje") para distinguirlos en el descubrimiento.
 
+> **`BRIDGE_ENROLLMENT_PASSWORD`** (opcional): habilita la obtención automática
+> del token desde el dashboard. Cuando esta variable está definida, en el dashboard
+> tras "Buscar SAIs en la red" aparecerá un botón "Conectar con contraseña". El
+> usuario introduce esta contraseña una vez y el dashboard recibe el token sin
+> tener que copiarlo a mano. Mínimo 8 caracteres. Si se omite, el método de
+> enrollment queda desactivado y solo es posible copiar el token por SSH.
+>
+> Añadirla en el `.env`:
+> ```
+> BRIDGE_ENROLLMENT_PASSWORD=la-contraseña-que-quieras
+> ```
+> El proceso del puente la convierte a un hash SHA-256 al arrancar y borra la
+> variable de entorno: la contraseña en claro no queda en memoria del proceso.
+
 > **Error frecuente:** `useradd: user 'saibridge' already exists` — ya existía.
 > Verifica con `id saibridge`. Si el `gid` es `nut`, está bien y continúa.
 

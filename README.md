@@ -37,6 +37,13 @@ Cada puente SAI se anuncia en la red local vía **SSDP multicast** (UDP 1900). E
 
 Identifica cada SAI con `BRIDGE_NAME` en `/etc/sai-monitor/sai-monitor.env`. Si tienes varios SAIs en la red, cada uno aparecerá con su nombre.
 
+### Dos métodos para obtener el token
+
+1. **Manual** (siempre disponible): conectas por SSH a la Pi y copias el valor de `BRIDGE_TOKEN` del `.env`. Lo pegas en el dashboard al añadir el SAI.
+2. **Con contraseña** (opcional): defines `BRIDGE_ENROLLMENT_PASSWORD` en el `.env` (mínimo 8 caracteres). Tras "Buscar SAIs en la red", el dashboard muestra un botón "Conectar con contraseña". Introduces la contraseña una vez, el puente valida y devuelve el token automáticamente. La contraseña no se transmite por SSDP ni se guarda en el navegador.
+
+El método 2 está protegido por rate limiting por IP (máximo 3 intentos por minuto) y comparación en tiempo constante.
+
 ---
 
 ## Estructura del repositorio

@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha1"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -41,14 +42,15 @@ import (
 // ---------------------------------------------------------------------------
 
 type config struct {
-	listen   string
-	token    string
-	origins  []string
-	nutAddr  string
-	tlsCert  string
-	tlsKey   string
-	cacheTTL time.Duration
-	nutTO    time.Duration
+	listen          string
+	token           string
+	origins         []string
+	nutAddr         string
+	tlsCert         string
+	tlsKey          string
+	cacheTTL        time.Duration
+	nutTO           time.Duration
+	enrollPassHash  []byte // SHA-256 de BRIDGE_ENROLLMENT_PASSWORD; nil = enrollment desactivado
 }
 
 func loadConfig() (config, error) {
@@ -72,6 +74,17 @@ func loadConfig() (config, error) {
 	}
 	if (c.tlsCert == "") != (c.tlsKey == "") {
 		return c, errors.New("BRIDGE_TLS_CERT y BRIDGE_TLS_KEY deben ir juntos")
+	}
+	// Enrollment opcional: si está presente, debe tener >= 8 caracteres.
+	// La contraseña en claro NO se guarda; solo su SHA-256.
+	if pw := os.Getenv("BRIDGE_ENROLLMENT_PASSWORD"); pw != "" {
+		if len(pw) < 8 {
+			return c, errors.New("BRIDGE_ENROLLMENT_PASSWORD demasiado corta (mínimo 8 caracteres)")
+		}
+		sum := sha256.Sum256([]byte(pw))
+		c.enrollPassHash = sum[:]
+		// Borrar la variable de entorno para reducir exposición en /proc.
+		_ = os.Unsetenv("BRIDGE_ENROLLMENT_PASSWORD")
 	}
 	return c, nil
 }
@@ -295,16 +308,52 @@ func (l *limiter) allow() bool {
 // ---------------------------------------------------------------------------
 
 type server struct {
-	cfg config
-	nut *nutClient
-	c   *cache
-	lim *limiter
+	cfg        config
+	nut        *nutClient
+	c          *cache
+	lim        *limiter
+	enrollLim  *ipLimiter // rate limit por IP para /api/enroll
+}
+
+// ---------------------------------------------------------------------------
+// Rate limiter por IP (anti-fuerza-bruta de enrollment)
+// ---------------------------------------------------------------------------
+
+type ipLimiter struct {
+	mu      sync.Mutex
+	rps     float64
+	burst   float64
+	buckets map[string]*limiter
+}
+
+func newIPLimiter(rps, burst float64) *ipLimiter {
+	return &ipLimiter{rps: rps, burst: burst, buckets: map[string]*limiter{}}
+}
+
+func (i *ipLimiter) allow(ip string) bool {
+	i.mu.Lock()
+	l, ok := i.buckets[ip]
+	if !ok {
+		l = newLimiter(i.rps, i.burst)
+		i.buckets[ip] = l
+	}
+	i.mu.Unlock()
+	return l.allow()
+}
+
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 func (s *server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/ups", s.handleList)
 	mux.HandleFunc("/api/ups/", s.handleUPS)
+	mux.HandleFunc("/api/enroll", s.handleEnroll)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "ok")
@@ -325,7 +374,7 @@ func (s *server) middleware(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Max-Age", "600")
 		}
 
@@ -334,18 +383,25 @@ func (s *server) middleware(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		// Solo lectura: ningún método mutante
-		if r.Method != http.MethodGet {
+		// Métodos permitidos por path:
+		//   GET  → todos los endpoints excepto /api/enroll
+		//   POST → solo /api/enroll
+		isEnroll := r.URL.Path == "/api/enroll"
+		switch {
+		case isEnroll && r.Method != http.MethodPost:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		case !isEnroll && r.Method != http.MethodGet:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		// Rate limiting
+		// Rate limiting global
 		if !s.lim.allow() {
 			http.Error(w, "too many requests", http.StatusTooManyRequests)
 			return
 		}
-		// /healthz no requiere token (sondas locales)
-		if r.URL.Path != "/healthz" && !s.tokenValido(r) {
+		// Endpoints sin token: /healthz y /api/enroll (este último usa contraseña)
+		if r.URL.Path != "/healthz" && !isEnroll && !s.tokenValido(r) {
 			time.Sleep(300 * time.Millisecond) // ralentiza fuerza bruta
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
@@ -391,6 +447,42 @@ func (s *server) handleUPS(w http.ResponseWriter, r *http.Request) {
 		return s.nut.listVars(name)
 	})
 	s.writeJSON(w, b, err)
+}
+
+func (s *server) handleEnroll(w http.ResponseWriter, r *http.Request) {
+	ip := clientIP(r)
+	// Si no hay contraseña configurada, el endpoint no existe.
+	if s.cfg.enrollPassHash == nil {
+		http.NotFound(w, r)
+		return
+	}
+	// Rate limit por IP: 3 intentos/min en ráfaga máxima 3.
+	if !s.enrollLim.allow(ip) {
+		log.Printf("enroll: rate-limit %s", ip)
+		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		return
+	}
+	// Body acotado a 256 bytes para evitar abuse.
+	r.Body = http.MaxBytesReader(w, r.Body, 256)
+	var body struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Password == "" {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	sum := sha256.Sum256([]byte(body.Password))
+	body.Password = "" // descartar de memoria del handler
+	if subtle.ConstantTimeCompare(sum[:], s.cfg.enrollPassHash) != 1 {
+		time.Sleep(500 * time.Millisecond) // anti-fuerza-bruta
+		log.Printf("enroll: FAIL %s", ip)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	log.Printf("enroll: OK %s", ip)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	resp, _ := json.Marshal(map[string]string{"token": s.cfg.token})
+	w.Write(resp)
 }
 
 func (s *server) writeJSON(w http.ResponseWriter, b []byte, err error) {
@@ -576,10 +668,11 @@ func main() {
 	}
 
 	s := &server{
-		cfg: cfg,
-		nut: &nutClient{addr: cfg.nutAddr, timeout: cfg.nutTO},
-		c:   newCache(cfg.cacheTTL),
-		lim: newLimiter(10, 20), // 10 req/s sostenido, ráfaga 20
+		cfg:       cfg,
+		nut:       &nutClient{addr: cfg.nutAddr, timeout: cfg.nutTO},
+		c:         newCache(cfg.cacheTTL),
+		lim:       newLimiter(10, 20),         // 10 req/s sostenido, ráfaga 20
+		enrollLim: newIPLimiter(0.05, 3),      // 3 intentos/min por IP (0.05 rps), ráfaga 3
 	}
 
 	srv := &http.Server{

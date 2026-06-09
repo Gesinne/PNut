@@ -443,6 +443,28 @@ button { touch-action: manipulation; }
 }
 .discover-msg { font-size: 13px; color: var(--txt-muted); margin-top: 8px; }
 .discover-err { font-size: 13px; color: var(--err); margin-top: 8px; }
+.discover-item-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+/* Form inline de enrollment */
+.enroll-form {
+  display: flex; flex-direction: column; gap: 8px;
+  margin-top: 10px; padding: 12px;
+  background: var(--accent-bg); border-radius: 7px;
+}
+.enroll-form-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.enroll-form-row input {
+  flex: 1; min-width: 0;
+  background: var(--surface); border: 1px solid var(--border);
+  color: var(--txt); padding: 8px 11px; border-radius: 6px;
+  font: 14px/1 'Inter', system-ui;
+}
+.enroll-form-row input:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+.enroll-feedback { font-size: 12px; min-height: 1em; }
+.enroll-feedback.err { color: var(--err); }
+.enroll-feedback.ok  { color: var(--ok); }
 
 /* ─── Reduced motion ─────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
@@ -1187,6 +1209,7 @@ document.getElementById("btn-discover").addEventListener("click", function(){
       var container = document.createElement("div");
       container.className = "discover-list";
       safe.forEach(function(d){
+        var wrap = document.createElement("div");
         var item = document.createElement("div");
         item.className = "discover-item";
         var info = document.createElement("div");
@@ -1198,18 +1221,33 @@ document.getElementById("btn-discover").addEventListener("click", function(){
         ur.className = "discover-item-url";
         ur.textContent = d.url;
         info.appendChild(nm); info.appendChild(ur);
-        var add = document.createElement("button");
-        add.className = "btn-primary btn-sm";
-        add.textContent = "Añadir";
-        add.addEventListener("click", function(){
+
+        var actions = document.createElement("div");
+        actions.className = "discover-item-actions";
+
+        var connect = document.createElement("button");
+        connect.className = "btn-primary btn-sm";
+        connect.textContent = "Conectar con contraseña";
+        connect.addEventListener("click", function(){
+          openEnrollForm(wrap, d);
+        });
+
+        var manual = document.createElement("button");
+        manual.className = "btn-ghost btn-sm";
+        manual.textContent = "Añadir manualmente";
+        manual.addEventListener("click", function(){
           document.getElementById("f-label").value = d.name || "";
           document.getElementById("f-url").value   = d.url;
           document.getElementById("f-token").value = "";
           updateAddBtn();
           document.getElementById("f-token").focus();
         });
-        item.appendChild(info); item.appendChild(add);
-        container.appendChild(item);
+
+        actions.appendChild(connect);
+        actions.appendChild(manual);
+        item.appendChild(info); item.appendChild(actions);
+        wrap.appendChild(item);
+        container.appendChild(wrap);
       });
       results.innerHTML = "";
       results.appendChild(container);
@@ -1222,6 +1260,114 @@ document.getElementById("btn-discover").addEventListener("click", function(){
         'Asegúrate de que <code>serve.py</code> está en marcha.</div>';
     });
 });
+
+/* ─── Enrollment con contraseña ──────────────────── */
+function openEnrollForm(wrapEl, device){
+  // Cerrar formularios previos en la lista
+  document.querySelectorAll(".enroll-form").forEach(function(el){ el.remove(); });
+
+  var form = document.createElement("div");
+  form.className = "enroll-form";
+
+  var row = document.createElement("div");
+  row.className = "enroll-form-row";
+
+  var pwd = document.createElement("input");
+  pwd.type = "password";
+  pwd.placeholder = "Contraseña configurada en la Pi";
+  pwd.autocomplete = "current-password";
+
+  var submit = document.createElement("button");
+  submit.className = "btn-primary btn-sm";
+  submit.textContent = "Conectar";
+
+  var cancel = document.createElement("button");
+  cancel.className = "btn-ghost btn-sm";
+  cancel.textContent = "Cancelar";
+
+  var feedback = document.createElement("div");
+  feedback.className = "enroll-feedback";
+
+  row.appendChild(pwd);
+  row.appendChild(submit);
+  row.appendChild(cancel);
+  form.appendChild(row);
+  form.appendChild(feedback);
+  wrapEl.appendChild(form);
+  pwd.focus();
+
+  function setMsg(text, kind){
+    feedback.className = "enroll-feedback" + (kind ? " " + kind : "");
+    feedback.textContent = text;
+  }
+
+  function doEnroll(){
+    var password = pwd.value;
+    if(!password){ setMsg("Introduce la contraseña.", "err"); return; }
+    submit.disabled = true; cancel.disabled = true;
+    setMsg("Conectando...", "");
+
+    var ctrl = new AbortController();
+    var to   = setTimeout(function(){ ctrl.abort(); }, 5000);
+
+    fetch(device.url + "/api/enroll", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ password: password }),
+      signal:  ctrl.signal,
+    })
+      .then(function(r){
+        clearTimeout(to);
+        if(r.status === 200) return r.json();
+        if(r.status === 401) throw new Error("401");
+        if(r.status === 404) throw new Error("404");
+        if(r.status === 429) throw new Error("429");
+        throw new Error("HTTP " + r.status);
+      })
+      .then(function(data){
+        if(!data.token) throw new Error("Respuesta inválida");
+        // Guardar SAI en localStorage con el token recibido
+        var list = loadEquipos();
+        list.push({
+          id:    uid(),
+          label: device.name || device.url,
+          url:   device.url,
+          token: data.token,
+        });
+        saveEquipos(list);
+        pwd.value = "";   // descartar password de memoria del DOM
+        form.remove();
+        renderEquiposList();
+        updateUI();
+        tick();
+        // Mensaje arriba del listado
+        var results = document.getElementById("discover-results");
+        var ok = document.createElement("div");
+        ok.className = "discover-msg";
+        ok.style.color = "var(--ok)";
+        ok.textContent = "Conectado a " + (device.name || device.url) + ". SAI añadido.";
+        results.insertBefore(ok, results.firstChild);
+        setTimeout(function(){ ok.remove(); }, 4000);
+      })
+      .catch(function(err){
+        submit.disabled = false; cancel.disabled = false;
+        var msg = "No se pudo contactar con el SAI.";
+        if(err.message === "401") msg = "Contraseña incorrecta.";
+        else if(err.message === "404") msg = "Este SAI no tiene enrollment configurado. Usa el método manual.";
+        else if(err.message === "429") msg = "Demasiados intentos. Espera 1 minuto.";
+        setMsg(msg, "err");
+      });
+  }
+
+  submit.addEventListener("click", doEnroll);
+  pwd.addEventListener("keydown", function(e){
+    if(e.key === "Enter") doEnroll();
+  });
+  cancel.addEventListener("click", function(){
+    pwd.value = "";
+    form.remove();
+  });
+}
 
 /* ─── Arranque ───────────────────────────────────── */
 updateAddBtn();
