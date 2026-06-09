@@ -1,81 +1,67 @@
-# Monitor SAI con NUT · Guía de instalación real
+# Monitor SAI con NUT · Guía de instalación
 
-Guía basada en la instalación real sobre **Orange Pi Zero Plus + Armbian + Salicru 850**.
-Incluye todos los errores encontrados y sus soluciones.
+Guía probada paso a paso sobre **Orange Pi Zero Plus + Armbian + Salicru SPS 850**. Incluye los comandos exactos, ejemplos de salida real, y los errores que pueden aparecer con su solución.
 
 ---
 
 ## Tabla de contenido
 
 - [Hardware verificado](#hardware-verificado)
-- [Imagen de Armbian correcta](#imagen-de-armbian-correcta)
-- [Paso 0 — Diagnóstico inicial](#paso-0--diagnóstico-inicial-ejecutar-antes-de-tocar-nada)
+- [Imagen de Armbian](#imagen-de-armbian)
+- [Paso 0 — Diagnóstico inicial](#paso-0--diagnóstico-inicial)
 - [Paso 1 — Primera actualización del sistema](#paso-1--primera-actualización-del-sistema)
-- [Paso 2 — Instalar NUT](#paso-2--instalar-nut)
-  - [2.1 Identificar el SAI](#21-identificar-el-sai)
-  - [2.2 Configurar los ficheros de NUT](#22-configurar-los-ficheros-de-nut)
-  - [2.3 Arrancar y verificar](#23-arrancar-y-verificar)
-- [Paso 3 — Compilar el puente](#paso-3--compilar-el-puente)
+- [Paso 2 — Instalar y configurar NUT](#paso-2--instalar-y-configurar-nut)
+- [Paso 3 — Subir el binario del puente a la Pi](#paso-3--subir-el-binario-del-puente-a-la-pi)
 - [Paso 4 — Instalar el puente en la Pi](#paso-4--instalar-el-puente-en-la-pi)
-- [Paso 5 — Verificar el puente](#paso-5--verificar-el-puente)
-- [Paso 6 — Dashboard](#paso-6--dashboard)
-- [Limitaciones conocidas del Salicru 850](#limitaciones-conocidas-del-salicru-850)
-- [Modificar la configuración del puente](#modificar-la-configuración-del-puente)
-- [Verificación rápida de salud](#verificación-rápida-de-salud)
-- [Errores conocidos y soluciones (resumen)](#errores-conocidos-y-soluciones-resumen)
+- [Paso 5 — Servicio systemd](#paso-5--servicio-systemd)
+- [Paso 6 — Verificar el puente](#paso-6--verificar-el-puente)
+- [Paso 7 — Dashboard en el Mac](#paso-7--dashboard-en-el-mac)
+- [Errores conocidos y soluciones](#errores-conocidos-y-soluciones)
+- [Limitaciones del Salicru SPS 850](#limitaciones-del-salicru-sps-850)
 - [Segunda Pi en adelante](#segunda-pi-en-adelante)
-- [Modificar el dashboard desde Claude Code](#modificar-el-dashboard-desde-claude-code)
 
 ---
 
 ## Hardware verificado
 
-| Componente | Valor real |
+| Componente | Valor |
 |---|---|
-| Placa | Orange Pi Zero Plus (H5, quad-core A53) |
-| Arquitectura | **aarch64 (ARM64)** — no ARMv7 |
+| Placa | Orange Pi Zero Plus (Allwinner H5, quad-core A53) |
+| Arquitectura | aarch64 (ARM64) |
 | SO | Armbian 24.8.1 Bookworm minimal (stable) |
 | Kernel | 6.6.44 LTS |
-| SAI | Salicru 850 (vendorid `2E66`, productid `0300`) |
+| SAI | Salicru SPS 850 Home (`vendorid 2E66`, `productid 0300`) |
 | Driver NUT | `usbhid-ups` |
-
-> El `lsusb` muestra el SAI como `ID 2e66:0300  1   850`. NUT lo identifica
-> como "Salicru HID" internamente aunque la etiqueta física diga otra cosa.
+| Interfaz red | `end0` (Ethernet, nomenclatura moderna de Armbian) |
 
 ---
 
-## Imagen de Armbian correcta
+## Imagen de Armbian
 
-**Usar siempre la imagen stable del archivo**, nunca nightly/rolling/trunk.
+**Usar siempre la imagen stable del archivo**, nunca nightly/rolling/trunk:
 
 - Archivo: https://archive.armbian.com/orangepizeroplus/archive/
 - Fichero: `Armbian_24.8.1_Orangepizeroplus_bookworm_current_6.6.44_minimal.img.xz`
 - Tamaño: ~226 MB
 - Flashear con Balena Etcher o `dd`
 
-> **Error crítico:** la imagen *Rolling Release* (`26.x-trunk`) tiene `apt` roto —
-> da `Illegal instruction` al intentar instalar cualquier paquete. Si el sistema
-> base falla así, reflashea con la imagen stable del archivo.
+> **Error crítico**: la imagen *Rolling Release* (`26.x-trunk`) tiene `apt` roto, da `Illegal instruction` al instalar paquetes. Si lo ves, reflashea con la imagen stable.
 
-> **SD card:** una tarjeta en mal estado hace que `apt upgrade` tarde eternidades,
-> corte el SSH y acabe con el sistema montado en solo lectura. Síntomas en `dmesg`:
-> `mmcblk0: recovery failed` y `EXT4-fs: Remounting filesystem read-only`.
-> Solución: SD nueva.
+> **SD card**: una tarjeta defectuosa hace que `apt upgrade` tarde eternidades, corte el SSH y monte el filesystem en solo lectura. Síntomas en `dmesg`: `mmcblk0: recovery failed` y `EXT4-fs: Remounting filesystem read-only`. Solución: SD nueva.
 
 ---
 
-## Paso 0 — Diagnóstico inicial (ejecutar antes de tocar nada)
+## Paso 0 — Diagnóstico inicial
+
+Antes de tocar nada, comprueba que la imagen es la correcta:
 
 ```bash
-cat /etc/armbian-release | grep -E "VERSION|IMAGE_TYPE"  # confirmar que es stable, no trunk
-uname -m                                                   # debe ser aarch64
-uname -r                                                   # kernel (debe ser 6.6.x)
-dpkg -l nut* 2>/dev/null | grep ^ii                        # NUT instalado?
-ss -tlnp | grep 3493                                       # upsd corriendo?
-lsusb                                                      # SAI detectado?
+cat /etc/armbian-release | grep -E "VERSION|IMAGE_TYPE"
+uname -m       # debe ser aarch64
+uname -r       # debe ser 6.6.x
 ```
 
-Si `IMAGE_TYPE=nightly` o `VERSION` contiene `trunk`: reflashea antes de continuar.
+Si `IMAGE_TYPE=nightly` o `VERSION` contiene `trunk`, reflashea antes de continuar.
 
 ---
 
@@ -85,67 +71,82 @@ Si `IMAGE_TYPE=nightly` o `VERSION` contiene `trunk`: reflashea antes de continu
 apt update && apt upgrade -y
 ```
 
-Si este comando falla con `Illegal instruction`: la imagen está rota, reflashea.
-Si tarda demasiado o corta el SSH: la SD está en mal estado, reemplázala.
+Si falla con `Illegal instruction`, la imagen está rota. Si tarda demasiado o corta SSH, la SD está mal.
 
 ---
 
-## Paso 2 — Instalar NUT
+## Paso 2 — Instalar y configurar NUT
+
+### 2.1 Instalar NUT
 
 ```bash
 apt install -y nut
 ```
 
-> En Armbian Bookworm, `nut-scanner` viene incluido en el paquete `nut`.
-> No existe como paquete separado — `apt install nut-scanner` da
-> `Unable to locate package`.
+### 2.2 Identificar el SAI
 
-### 2.1 Identificar el SAI
+```bash
+lsusb
+```
+
+Salida esperada (busca tu SAI entre las líneas):
+```
+Bus 005 Device 002: ID 2e66:0300 1   850
+```
+
+Anota el `vendorid` y `productid`. Para el Salicru 850 son `2E66` y `0300`.
 
 ```bash
 nut-scanner -U
 ```
 
-Los avisos de `Cannot load SNMP/XML/AVAHI library` son **normales**.
-Lo relevante es el bloque `[nutdev1]` con `driver`, `vendorid` y `productid`.
-
-### 2.2 Configurar los ficheros de NUT
-
-**`/etc/nut/nut.conf`** — el más importante. Sin esto, `upsd` no arranca:
-
-```bash
-echo 'MODE=netserver' > /etc/nut/nut.conf
+Salida esperada:
+```
+[nutdev1]
+        driver = "usbhid-ups"
+        port = "auto"
+        vendorid = "2E66"
+        productid = "0300"
+        product = " 850"
+        vendor = "1"
+        bus = "005"
 ```
 
-> **Error frecuente:** si `upsd` arranca y se para con `upsd disabled, please
-> adjust the configuration`, es porque `nut.conf` tiene `MODE=none` o está vacío.
-> Solución: el comando de arriba.
+Los avisos `Cannot load SNMP/XML/AVAHI library` son normales — el escáner intenta otros protocolos que no necesitamos.
 
-**`/etc/nut/upsd.conf`** — solo localhost, nunca en red:
+### 2.3 Crear los 4 ficheros de configuración de NUT
+
+Genera primero una contraseña interna para que el cliente NUT lea al `upsd`. **Esta NO es la del token del puente, es solo interna de NUT**:
 
 ```bash
+NUT_PASS=$(openssl rand -hex 16)
+echo "NUT_PASS: $NUT_PASS"
+```
+
+Anota ese valor (la usarás dentro de `upsd.users`).
+
+Luego crea los 4 configs en bloque:
+
+```bash
+# nut.conf: dice a NUT que actúe como servidor de red
+echo 'MODE=netserver' > /etc/nut/nut.conf
+
+# upsd.conf: el daemon NUT escucha SOLO en localhost (no expuesto a red)
 cat > /etc/nut/upsd.conf << 'EOF'
 LISTEN 127.0.0.1 3493
 MAXAGE 15
 EOF
-```
 
-**`/etc/nut/upsd.users`** — usuario de solo lectura:
-
-```bash
-cat > /etc/nut/upsd.users << 'EOF'
+# upsd.users: usuario monitor con permisos de solo lectura
+cat > /etc/nut/upsd.users << EOF
 [monitor]
-    password = CAMBIA_ESTA_CLAVE
+    password = ${NUT_PASS}
     upsmon primary
 EOF
 chmod 640 /etc/nut/upsd.users
 chown root:nut /etc/nut/upsd.users
-```
 
-**`/etc/nut/ups.conf`** — usa `vendorid` + `productid` para identificar el SAI
-de forma inequívoca:
-
-```bash
+# ups.conf: define el SAI por vendorid+productid (no por puerto USB)
 cat > /etc/nut/ups.conf << 'EOF'
 maxretry = 3
 pollinterval = 2
@@ -159,357 +160,290 @@ pollinterval = 2
 EOF
 ```
 
-> `pollinterval = 2` hace que el driver consulte el hardware cada 2 s.
+> **¿Por qué `vendorid + productid` en vez de un puerto USB?** Si reordenas cables o reinicias, el puerto USB puede cambiar; el ID de fabricante y producto no. Con esto el SAI siempre se identifica sin importar el orden de conexión.
 
-### 2.3 Arrancar y verificar
+### 2.4 Arrancar NUT y verificar
 
 ```bash
 systemctl restart nut-server
-sleep 2
-systemctl status nut-server
+sleep 5
+systemctl status nut-server --no-pager
+```
+
+Salida esperada (clave: `Connected to UPS [sai1]`):
+```
+● nut-server.service - Network UPS Tools - power devices information server
+     Active: active (running) since ...
+   Main PID: ...
+   ...
+   nut-server[...]: Connected to UPS [sai1]: usbhid-ups-sai1
+   nut-server[...]: listening on 127.0.0.1 port 3493
+```
+
+Comprueba que NUT lee datos del SAI:
+
+```bash
 upsc sai1
 ```
 
-> **Error frecuente:** `upsc sai1` da `Error: Driver not connected` justo tras
-> el arranque. El driver de NUT en Bookworm tarda unos segundos en inicializarse.
-> Espera 5 segundos y repite `upsc sai1` — suele resolverse solo.
-> Comprueba el estado del driver con:
+Debe listar variables como `battery.charge: 100`, `ups.status: OL`, `input.voltage: 218.5`. Si ves `ups.status: OL` significa "On Line" (funcionando con red eléctrica) — perfecto.
+
+> **Error frecuente**: `upsc sai1` da `Error: Driver not connected` justo tras arrancar. El driver tarda unos segundos. Espera 5 y repite. Si persiste:
 > ```bash
 > systemctl list-units | grep nut
-> # El servicio relevante es nut-driver@sai1.service — debe estar 'active running'
+> # nut-driver@sai1.service debe estar 'active running'
 > ```
 
 ---
 
-## Paso 3 — Subir el binario a la Pi
+## Paso 3 — Subir el binario del puente a la Pi
 
-El proyecto ya incluye `sai-monitor-arm64` compilado para **ARM64** (Orange Pi Zero Plus).
-No necesitas instalar Go ni compilar nada — solo súbelo:
+El proyecto incluye `sai-monitor-arm64` precompilado. No hace falta instalar Go ni compilar nada.
+
+**En el Mac**, desde la carpeta del repo:
 
 ```bash
+cd ~/Documents/PNut/orange-pi
 scp pi/bridge/sai-monitor-arm64 root@IP_DE_LA_PI:/tmp/
 ```
 
-> **Error frecuente en scp:** `WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED`
-> Ocurre al reflashear la SD — la Pi tiene una clave SSH nueva. Solución:
+Sustituye `IP_DE_LA_PI` por la IP real de tu Orange Pi (la misma que usas para SSH).
+
+> **Error frecuente en scp**: `WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED`. Ocurre al reflashear la SD (la Pi tiene clave SSH nueva). Solución:
 > ```bash
 > ssh-keygen -R IP_DE_LA_PI
 > scp pi/bridge/sai-monitor-arm64 root@IP_DE_LA_PI:/tmp/
 > ```
 
-> **Error conocido:** con Armbian *nightly/trunk*, el binario da `Segmentation fault`
-> al ejecutarse. No es un problema del binario — es la imagen rota. Reflashea.
-
-### Si necesitas recompilar (solo si modificas main.go)
+### Si necesitas recompilar (solo si modificas `main.go`)
 
 ```bash
-# En el Mac:
-brew install go   # si no lo tienes
-cd pi/bridge
+brew install go      # solo si no lo tienes
+cd ~/Documents/PNut/orange-pi/pi/bridge
 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o sai-monitor-arm64 .
 
-# Verificar
 file sai-monitor-arm64
 # Debe decir: ELF 64-bit LSB executable, ARM aarch64, statically linked
-
-scp sai-monitor-arm64 root@IP_DE_LA_PI:/tmp/
 ```
 
 ---
 
 ## Paso 4 — Instalar el puente en la Pi
 
-### 4.1 Instalar el binario
+### 4.1 Instalar el binario y crear usuario sin privilegios
+
+En la Pi (SSH como root):
 
 ```bash
 install -m 0755 /tmp/sai-monitor-arm64 /usr/local/bin/sai-monitor
-```
-
-### 4.2 Crear usuario y configuración
-
-```bash
 useradd --system --no-create-home --shell /usr/sbin/nologin -g nut saibridge
 mkdir -p /etc/sai-monitor
+```
+
+> **Error frecuente**: `useradd: user 'saibridge' already exists`. Comprueba con `id saibridge`; si el `gid` es `nut`, ya está bien y continúa.
+
+### 4.2 Generar token y password de enrollment
+
+El puente tiene dos credenciales independientes:
+
+| Credencial | Para qué |
+|---|---|
+| `BRIDGE_TOKEN` | Token HTTP Bearer que el dashboard usa en cada petición |
+| `BRIDGE_ENROLLMENT_PASSWORD` | Contraseña que tú eliges. El dashboard la pide una vez tras descubrir el SAI; si es correcta, el puente devuelve el token automáticamente |
+
+Genera ambos:
+
+```bash
 TOKEN=$(openssl rand -hex 32)
-echo "TOKEN: $TOKEN"   # guárdalo
+ENROLL_PASS="cambia-esta-password"   # mínimo 8 caracteres, SIN comillas
+echo "TOKEN: $TOKEN"
+echo "ENROLL_PASS: $ENROLL_PASS"
+```
+
+> **¡Cuidado con las comillas tipográficas!** Si copias `"123456789"` desde una app del Mac con autocorrect, las comillas pueden ser curvas Unicode (`“ ”`) en vez de rectas ASCII (`" "`). En bash quedan como parte del valor. Resultado: la password real almacenada incluye las comillas y nunca matchea cuando la escribes en el dashboard. Solución: **no uses comillas** o escribe el valor directamente en la terminal.
+
+Guarda el TOKEN en un sitio seguro por si quieres usar el método manual más adelante.
+
+### 4.3 Crear el fichero de entorno
+
+```bash
 cat > /etc/sai-monitor/sai-monitor.env << EOF
 BRIDGE_LISTEN=:49152
 BRIDGE_TOKEN=${TOKEN}
 BRIDGE_NAME=SAI Salón
+BRIDGE_ENROLLMENT_PASSWORD=${ENROLL_PASS}
 NUT_ADDR=127.0.0.1:3493
 BRIDGE_CACHE_TTL=1s
 BRIDGE_ORIGINS=http://localhost:5500
 EOF
+
 chmod 600 /etc/sai-monitor/sai-monitor.env
+chown root:nut /etc/sai-monitor/sai-monitor.env
+cat /etc/sai-monitor/sai-monitor.env
 ```
 
-> **`BRIDGE_NAME`** es el nombre con el que la Pi se anuncia en la LAN vía SSDP.
-> Si tienes varios SAIs en la misma red, ponles nombres distintos
-> (ej. "SAI Salón", "SAI Rack", "SAI Garaje") para distinguirlos en el descubrimiento.
+**Qué hace cada variable:**
 
-> **`BRIDGE_ENROLLMENT_PASSWORD`** (opcional): habilita la obtención automática
-> del token desde el dashboard. Cuando esta variable está definida, en el dashboard
-> tras "Buscar SAIs en la red" aparecerá un botón "Conectar con contraseña". El
-> usuario introduce esta contraseña una vez y el dashboard recibe el token sin
-> tener que copiarlo a mano. Mínimo 8 caracteres. Si se omite, el método de
-> enrollment queda desactivado y solo es posible copiar el token por SSH.
->
-> Añadirla en el `.env`:
-> ```
-> BRIDGE_ENROLLMENT_PASSWORD=la-contraseña-que-quieras
-> ```
-> El proceso del puente la convierte a un hash SHA-256 al arrancar y borra la
-> variable de entorno: la contraseña en claro no queda en memoria del proceso.
+| Variable | Función |
+|---|---|
+| `BRIDGE_LISTEN` | Puerto HTTP del puente. `49152` está en el rango privado IANA, raramente bloqueado por proxies |
+| `BRIDGE_TOKEN` | Token Bearer para autenticación HTTP. 64 hex chars |
+| `BRIDGE_NAME` | Nombre que el SAI muestra en el autodescubrimiento. Pon uno descriptivo si tienes varios SAIs (ej. "SAI Salón", "SAI Rack") |
+| `BRIDGE_ENROLLMENT_PASSWORD` | Opcional. Si está, habilita el botón "Conectar con contraseña" del dashboard. Si está vacía, solo método manual |
+| `NUT_ADDR` | Dirección del `upsd` local. Siempre `127.0.0.1:3493` |
+| `BRIDGE_CACHE_TTL` | Cuánto cachea el puente cada respuesta. 1 segundo es suficiente |
+| `BRIDGE_ORIGINS` | Orígenes CORS permitidos. `http://localhost:5500` cubre el `serve.py` del Mac |
 
-> **Error frecuente:** `useradd: user 'saibridge' already exists` — ya existía.
-> Verifica con `id saibridge`. Si el `gid` es `nut`, está bien y continúa.
+---
 
-> **Error frecuente:** `chown: invalid group: 'root:saibridge'` aunque el usuario
-> exista. Usa el GID numérico:
-> ```bash
-> id saibridge       # anota el gid (p. ej. 987)
-> chown 0:987 /etc/sai-monitor/sai-monitor.env
-> ```
+## Paso 5 — Servicio systemd
 
-> **Error frecuente:** al usar `&&` encadenado, si el primer comando falla
-> (p. ej. `useradd` porque el usuario ya existe), los siguientes no se ejecutan.
-> Si esto pasa, ejecuta los comandos restantes por separado.
+### 5.1 Subir el unit file
 
-### 4.3 Instalar el servicio systemd
+En el Mac:
 
 ```bash
-cat > /etc/systemd/system/sai-monitor.service << 'EOF'
-[Unit]
-Description=Puente NUT->HTTP (solo lectura) para monitor de SAI
-After=network-online.target nut-server.service
-Wants=network-online.target
-
-[Service]
-User=saibridge
-Group=nut
-EnvironmentFile=/etc/sai-monitor/sai-monitor.env
-ExecStart=/usr/local/bin/sai-monitor
-Restart=on-failure
-RestartSec=3
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-PrivateTmp=true
-PrivateDevices=true
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectControlGroups=true
-RestrictAddressFamilies=AF_INET AF_INET6
-RestrictNamespaces=true
-LockPersonality=true
-MemoryDenyWriteExecute=false
-MemoryMax=64M
-TasksMax=32
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-systemctl daemon-reload
-systemctl enable --now sai-monitor
-systemctl status sai-monitor
+scp pi/deploy/systemd/sai-monitor.service root@IP_DE_LA_PI:/etc/systemd/system/
 ```
 
-> **`MemoryDenyWriteExecute=false`** es obligatorio en ARM64 con Go. Con `true`
-> el proceso muere con SIGSEGV. No es un fallo de seguridad: Go necesita esto
-> para el planificador de goroutines.
+### 5.2 Habilitar y arrancar
 
-> **`ProtectSystem=strict`** monta `/etc` en solo lectura para el proceso.
-> Para editar el `.env` con el servicio corriendo usa `sed -i` — dará
-> `Read-only file system`. Procedimiento correcto:
+En la Pi:
+
+```bash
+systemctl daemon-reload
+systemctl enable --now sai-monitor
+sleep 2
+systemctl status sai-monitor --no-pager
+```
+
+Salida esperada:
+```
+● sai-monitor.service - Puente NUT->HTTP (solo lectura) para monitor de SAI
+     Active: active (running)
+     Memory: 2.2M (max: 64.0M ...)
+     ...
+   sai-monitor[...]: escuchando HTTP en :49152 (NUT=127.0.0.1:3493) — sin TLS
+   sai-monitor[...]: ssdp: anunciando "SAI Salón" en http://192.168.0.X:49152
+```
+
+> **Error frecuente**: el log muestra `ssdp: no se detectó IP LAN, autodescubrimiento desactivado` aunque la Pi tenga IP. Causa: el unit file restringe `AF_NETLINK`, que es lo que Go usa internamente para listar interfaces de red.
+>
+> Solución (ya aplicada en el unit del repo desde junio 2026):
+> ```bash
+> sed -i 's|RestrictAddressFamilies=AF_INET AF_INET6|RestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK|' /etc/systemd/system/sai-monitor.service
+> systemctl daemon-reload
+> systemctl restart sai-monitor
+> journalctl -u sai-monitor -n 5 --no-pager
+> ```
+> Debe aparecer `ssdp: anunciando "..." en http://IP:49152`.
+
+> **Error frecuente**: `Failed to enable unit: Unit file is masked`. El servicio quedó enmascarado de una instalación anterior:
+> ```bash
+> systemctl unmask sai-monitor
+> # repetir el scp y luego daemon-reload + enable
+> ```
+
+> **Error sobre `ProtectSystem=strict`**: el `.env` queda en `/etc` en solo lectura para el proceso. Para editarlo con el servicio corriendo:
 > ```bash
 > systemctl stop sai-monitor
 > # editar /etc/sai-monitor/sai-monitor.env
 > systemctl start sai-monitor
 > ```
 
-> **Error frecuente:** `Failed to enable unit: Unit file is masked`
-> Ocurre si el servicio quedó enmascarado de una instalación anterior.
-> Solución:
-> ```bash
-> systemctl unmask sai-monitor
-> # y luego repetir el cat > ... << 'EOF' del servicio
-> ```
-
-> **Error frecuente al pegar bloques largos:** el terminal puede cortar el `cat`
-> antes del `EOF` y quedarse esperando input. Si el prompt no vuelve, pulsa
-> `Ctrl+C` y pega el bloque en dos partes: primero el `cat << 'EOF' ... EOF`
-> y luego los comandos `systemctl` por separado.
-
 ---
 
-## Paso 5 — Verificar el puente
+## Paso 6 — Verificar el puente
+
+En la Pi:
 
 ```bash
-# Debe dar 401 (rechaza sin token)
-curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:49152/api/ups
-
-# Debe devolver JSON con la lista de SAIs
-curl -s -H "Authorization: Bearer TU_TOKEN" http://127.0.0.1:49152/api/ups
-
-# Debe devolver todas las variables del SAI
-curl -s -H "Authorization: Bearer TU_TOKEN" http://127.0.0.1:49152/api/ups/sai1
+curl -s -o /dev/null -w "healthz: %{http_code}\n" http://127.0.0.1:49152/healthz
+curl -s -o /dev/null -w "sin token: %{http_code}\n" http://127.0.0.1:49152/api/ups
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:49152/api/ups
 ```
 
-> **Error frecuente:** el curl devuelve `000` (sin respuesta) en lugar de `401`.
-> El servicio no está escuchando. Comprueba:
-> ```bash
-> systemctl status sai-monitor
-> journalctl -u sai-monitor -n 20
-> ```
+Salidas esperadas:
+```
+healthz: 200
+sin token: 401
+[{"name":"sai1","description":"Salicru 850"}]
+```
+
+Si todo da estos resultados, el puente funciona y el sistema está listo.
 
 ---
 
-## Paso 6 — Dashboard
+## Paso 7 — Dashboard en el Mac
 
-Desde la carpeta del proyecto:
+En el Mac, desde la carpeta del proyecto:
 
 ```bash
+cd ~/Documents/PNut/orange-pi
 python3 client/scripts/serve.py
 ```
 
-Abre el navegador automáticamente en `http://localhost:5500`. Ctrl+C para parar.
+Se abre el navegador en `http://localhost:5500`. En el dashboard:
 
-> **Autodescubrimiento**: en la pestaña Equipos, pulsa "Buscar SAIs en la red".
-> Cada Pi con el puente corriendo aparecerá automáticamente (sin teclear IP).
-> El token sigue siendo obligatorio — el descubrimiento solo encuentra la URL.
+1. Pestaña **Equipos**
+2. Pulsa **"Buscar SAIs en la red"**
+3. Aparece tu Pi: `SAI Salón` con la URL `http://192.168.0.X:49152`
+4. Dos opciones:
+   - **"Conectar con contraseña"** (recomendado): introduces la `BRIDGE_ENROLLMENT_PASSWORD` que pusiste en el `.env` y el token se obtiene automáticamente
+   - **"Añadir manualmente"**: pegas el `BRIDGE_TOKEN` a mano (útil si no configuraste enrollment)
+5. El SAI aparece en "SAIs configurados"
+6. Pestaña **Monitorización**: ves los datos en vivo (carga batería, autonomía, tensión, etc.) actualizándose cada 5 segundos
 
-> **Error frecuente:** `Puerto 5500 ocupado`
-> El script lo detecta y te da el comando exacto para liberarlo.
-> Si prefieres hacerlo manual:
+> **Error frecuente**: `Puerto 5500 ocupado`. El script te da el comando exacto para liberarlo. Manual:
 > ```bash
 > kill $(lsof -ti:5500)
 > python3 client/scripts/serve.py
 > ```
 
-Pulsa "Añadir equipo":
-
-| Campo | Valor |
-|---|---|
-| Etiqueta | Salicru 850 (o lo que quieras) |
-| URL | `http://IP_DE_LA_PI:49152` |
-| Token | el generado con `openssl rand -hex 32` |
-
-> **Error frecuente en Firefox:** `Uncaught ReferenceError: f_label is not defined`
-> Firefox no expone los elementos del DOM como variables globales por su `id`.
-> Solución: usar el `index.html` corregido que usa `document.getElementById()`
-> y `addEventListener` en lugar de referencias globales.
-
-> **Error frecuente:** la gráfica aparece unos segundos y desaparece en cada
-> refresco. Ocurre porque el panel se reconstruye con `innerHTML` destruyendo
-> el contenedor de uPlot. Solución: usar el `index.html` corregido donde la
-> estructura del panel se crea una sola vez y solo se actualizan los datos.
-
-> **Nota sobre `BRIDGE_ORIGINS`:** el origen debe coincidir exactamente con la
-> URL desde donde sirves el dashboard. Si sirves desde el Mac con
-> `python3 -m http.server 5500`, el origen es `http://localhost:5500`. Si lo
-> abres con la IP del Mac, debe ser `http://IP_MAC:5500`. Deben coincidir.
-> Para cambiar el origen en la Pi:
+> **Error frecuente al "Conectar con contraseña"**: "Contraseña incorrecta" aunque pongas la correcta. Revisa si en el `.env` quedó con comillas tipográficas Unicode. Solución:
 > ```bash
-> systemctl stop sai-monitor
-> # editar BRIDGE_ORIGINS en /etc/sai-monitor/sai-monitor.env
-> systemctl start sai-monitor
+> sed -i 's/BRIDGE_ENROLLMENT_PASSWORD=.*/BRIDGE_ENROLLMENT_PASSWORD=tu-password-limpia/' /etc/sai-monitor/sai-monitor.env
+> systemctl restart sai-monitor
 > ```
 
 ---
 
-## Limitaciones conocidas del Salicru 850
-
-- **No reporta `ups.realpower`** (vatios reales). Solo `ups.realpower.nominal`
-  (490W, potencia máxima). El dashboard estima el consumo como
-  `ups.load% × 490W` y lo muestra como "Potencia (est.)".
-- **Serial vacío** — el firmware no lo expone.
-- **`output.voltage`** reporta el voltaje de la batería interna (12V), no el
-  voltaje de salida de red. Es una limitación del firmware.
-
----
-
-## Modificar la configuración del puente
-
-```bash
-systemctl stop sai-monitor
-
-cat > /etc/sai-monitor/sai-monitor.env << 'EOF'
-BRIDGE_LISTEN=:49152
-BRIDGE_TOKEN=TU_TOKEN
-NUT_ADDR=127.0.0.1:3493
-BRIDGE_CACHE_TTL=1s
-BRIDGE_ORIGINS=http://localhost:5500
-EOF
-
-systemctl start sai-monitor
-systemctl status sai-monitor
-```
-
----
-
-## Verificación rápida de salud
-
-```bash
-# SD card: busca errores de I/O
-dmesg | grep -E "I/O error|mmcblk|EXT4-fs" | tail -10
-
-# NUT leyendo el SAI
-upsc sai1 | grep -E "ups.status|battery.charge|ups.load"
-
-# Puente respondiendo
-curl -s -H "Authorization: Bearer TU_TOKEN" http://127.0.0.1:49152/api/ups
-
-# Logs del puente en tiempo real
-journalctl -u sai-monitor -f
-```
-
----
-
-## Errores conocidos y soluciones (resumen)
+## Errores conocidos y soluciones
 
 | Error | Causa | Solución |
 |---|---|---|
-| `Illegal instruction` en apt | Imagen nightly/trunk rota | Reflashear con stable 24.8.1 |
-| `upsd disabled` al arrancar | `nut.conf` vacío o `MODE=none` | `echo 'MODE=netserver' > /etc/nut/nut.conf` |
-| `Error: Driver not connected` | Driver NUT tardando en iniciar | Esperar 5s y repetir `upsc sai1` |
-| `SEGV` en el binario Go | Imagen rota o `MemoryDenyWriteExecute=true` | Reflashear o cambiar a `false` en el `.service` |
-| `chown: invalid group` | Bug en Armbian con usuarios de sistema | Usar GID numérico: `chown 0:GID fichero` |
-| `sed -i: Read-only file system` | `ProtectSystem=strict` activo | Parar el servicio antes de editar |
+| `Illegal instruction` en `apt` | Imagen Armbian nightly/trunk rota | Reflashear con la stable 24.8.1 |
+| `upsd disabled, please adjust the configuration` | `nut.conf` vacío o con `MODE=none` | `echo 'MODE=netserver' > /etc/nut/nut.conf` |
+| `Error: Driver not connected` en `upsc` | Driver NUT inicializándose | Esperar 5 segundos y repetir |
+| Binario Go da `SIGSEGV` | Imagen rota o `MemoryDenyWriteExecute=true` en armv7 | Reflashear o quitar la línea del unit |
+| `ssdp: no se detectó IP LAN` aunque la Pi tenga IP | Unit restringía `AF_NETLINK` | Añadir `AF_NETLINK` a `RestrictAddressFamilies` (ya corregido en el repo) |
+| "Contraseña incorrecta" en el dashboard con la password correcta | Comillas tipográficas Unicode en el `.env` | Reescribir el valor sin comillas |
+| `chown: invalid group: 'root:saibridge'` | Bug en Armbian con usuarios de sistema | Usar GID numérico: `id saibridge` y `chown 0:GID fichero` |
+| `sed -i: Read-only file system` editando el `.env` | `ProtectSystem=strict` activo | `systemctl stop sai-monitor` antes de editar |
 | `Unit file is masked` | Servicio enmascarado de instalación anterior | `systemctl unmask sai-monitor` |
-| `WARNING: REMOTE HOST IDENTIFICATION` | SD reflasheada, clave SSH nueva | `ssh-keygen -R IP_DE_LA_PI` |
-| `Address already in use` en python | Puerto 5500 ya ocupado | `serve.py` lo detecta; o `kill $(lsof -ti:5500)` |
-| `f_label is not defined` en Firefox | Firefox no expone IDs como variables globales | Usar index.html corregido con `getElementById` |
-| Gráfica desaparece al refrescar | `innerHTML` destruye el contenedor uPlot | Usar index.html corregido con estructura fija |
-| SD card: sistema de ficheros ro | SD en mal estado | SD nueva |
-| `Call to Reboot failed` | Sesión degradada por fallo de SD | `echo b > /proc/sysrq-trigger` o desconectar alimentación |
+| `WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED` en scp | SD reflasheada, clave SSH nueva | `ssh-keygen -R IP_DE_LA_PI` |
+| `Address already in use` en `python3 serve.py` | Puerto 5500 ya ocupado | `kill $(lsof -ti:5500)` |
+| SD card en solo lectura | SD defectuosa | Reemplazar SD |
+
+---
+
+## Limitaciones del Salicru SPS 850
+
+- **`ups.realpower` no reportado**: el firmware no expone los vatios reales, solo `ups.realpower.nominal` (490W máximo). El dashboard estima el consumo como `ups.load% × 490W`.
+- **`ups.load = 0` durante carga de batería**: en estado `OL CHRG` el driver reporta 0% de carga aunque haya consumo. Normal; se recupera al terminar la carga.
+- **`ups.serial` vacío**: el firmware no lo expone.
+- **`output.voltage` reporta ~14V**: es la tensión interna de la batería (12V plomo-ácido), no los 230V de salida. Limitación del firmware.
 
 ---
 
 ## Segunda Pi en adelante
 
-El proceso es idéntico. Lo único que cambia:
+El proceso es idéntico. Tres cosas que **deben** cambiar entre Pis:
 
-1. Token distinto por Pi (`openssl rand -hex 32`) — así puedes revocar uno sin afectar a los demás.
-2. El nombre `sai1` en `ups.conf` puede repetirse — cada Pi es independiente.
-3. Añade la nueva IP en el dashboard con su token.
-4. `BRIDGE_ORIGINS` es el mismo en todas las Pis si el dashboard se sirve desde el mismo sitio.
+1. **Token distinto** por Pi (`openssl rand -hex 32`): así puedes revocar uno sin afectar a los demás
+2. **Password de enrollment distinta** (opcional pero recomendado)
+3. **`BRIDGE_NAME` distinto** (ej. "SAI Salón", "SAI Rack", "SAI Garaje"): aparece en el autodescubrimiento del dashboard
 
----
+El nombre `sai1` dentro de `ups.conf` puede repetirse — cada Pi es un dominio independiente.
 
-## Modificar el dashboard desde Claude Code
-
-Para hacer cambios en `index.html` sin copiar y pegar código:
-
-```bash
-# Instalar Claude Code
-npm install -g @anthropic/claude-code
-
-# Entrar en la carpeta del proyecto
-cd ~/ruta/al/proyecto
-
-# Arrancar Claude Code
-claude
-```
-
-Dentro describes el cambio en lenguaje natural y Claude Code edita el fichero directamente.
+Si el dashboard se sirve desde el mismo origen (`http://localhost:5500`), `BRIDGE_ORIGINS` es idéntico en todas las Pis.

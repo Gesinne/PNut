@@ -21,7 +21,9 @@ PrivateDevices=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
-RestrictAddressFamilies=AF_INET AF_INET6
+# AF_NETLINK necesario para que el binario Go enumere las interfaces de red
+# (lo usa la detección de IP LAN del autodescubrimiento SSDP).
+RestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK
 RestrictNamespaces=true
 LockPersonality=true
 MemoryDenyWriteExecute=true
