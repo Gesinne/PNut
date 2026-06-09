@@ -1,0 +1,19 @@
+[Unit]
+Description=PNut Orange Pi — bootstrap automático del SAI (cada arranque)
+# Se ejecuta una vez por boot. Sin cambios en el SAI sale en milisegundos
+# (compara fingerprint en /var/lib/sai-monitor/sai.fingerprint). Si detecta un
+# SAI distinto, reescribe la configuración de NUT y reinicia los servicios.
+After=local-fs.target systemd-udev-settle.service
+Before=nut-server.service sai-monitor.service
+DefaultDependencies=yes
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/sai-bootstrap.sh
+RemainAfterExit=no
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=180
+
+[Install]
+WantedBy=multi-user.target

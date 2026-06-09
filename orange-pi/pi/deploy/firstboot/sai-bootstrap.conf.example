@@ -1,0 +1,14 @@
+# Copia este fichero a /boot/sai-bootstrap.conf antes del primer arranque.
+# Es OPCIONAL: si no existe, el bootstrap genera valores razonables.
+# Líneas con # se ignoran. NO uses comillas tipográficas: «", "» (Unicode).
+
+# Nombre legible que aparece en el autodescubrimiento SSDP del dashboard.
+BRIDGE_NAME=SAI Orange Pi
+
+# Contraseña que el dashboard pedirá al "Conectar con contraseña".
+# Mínimo 8 caracteres. Si la omites, el bootstrap genera una aleatoria
+# y la deja en /etc/sai-monitor/.creds (léela con: sudo cat /etc/sai-monitor/.creds).
+# BRIDGE_ENROLLMENT_PASSWORD=cambia-esta-password
+
+# Orígenes CORS permitidos (CSV). Para el serve.py local del repo basta con:
+BRIDGE_ORIGINS=http://localhost:5500
