@@ -187,14 +187,14 @@ El proyecto ya incluye `sai-monitor-arm64` compilado para **ARM64** (Orange Pi Z
 No necesitas instalar Go ni compilar nada — solo súbelo:
 
 ```bash
-scp sai-monitor-arm64 root@IP_DE_LA_PI:/tmp/
+scp pi/bridge/sai-monitor-arm64 root@IP_DE_LA_PI:/tmp/
 ```
 
 > **Error frecuente en scp:** `WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED`
 > Ocurre al reflashear la SD — la Pi tiene una clave SSH nueva. Solución:
 > ```bash
 > ssh-keygen -R IP_DE_LA_PI
-> scp sai-monitor-arm64 root@IP_DE_LA_PI:/tmp/
+> scp pi/bridge/sai-monitor-arm64 root@IP_DE_LA_PI:/tmp/
 > ```
 
 > **Error conocido:** con Armbian *nightly/trunk*, el binario da `Segmentation fault`
@@ -205,7 +205,7 @@ scp sai-monitor-arm64 root@IP_DE_LA_PI:/tmp/
 ```bash
 # En el Mac:
 brew install go   # si no lo tienes
-cd sai-monitor-proyecto
+cd pi/bridge
 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o sai-monitor-arm64 .
 
 # Verificar
@@ -370,7 +370,7 @@ curl -s -H "Authorization: Bearer TU_TOKEN" http://127.0.0.1:49152/api/ups/sai1
 Desde la carpeta del proyecto:
 
 ```bash
-python3 scripts/serve.py
+python3 client/scripts/serve.py
 ```
 
 Abre el navegador automáticamente en `http://localhost:5500`. Ctrl+C para parar.
@@ -384,7 +384,7 @@ Abre el navegador automáticamente en `http://localhost:5500`. Ctrl+C para parar
 > Si prefieres hacerlo manual:
 > ```bash
 > kill $(lsof -ti:5500)
-> python3 scripts/serve.py
+> python3 client/scripts/serve.py
 > ```
 
 Pulsa "Añadir equipo":

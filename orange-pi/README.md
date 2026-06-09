@@ -48,24 +48,34 @@ El método 2 está protegido por rate limiting por IP (máximo 3 intentos por mi
 
 ## Estructura del repositorio
 
+Separado por dónde corre cada cosa:
+
 ```
-├── bridge/
-│   ├── main.go              # Puente NUT→HTTP (Go, stdlib pura)
-│   ├── go.mod
-│   └── sai-monitor-arm64    # Binario compilado para ARM64
-├── dashboard/
-│   └── index.html           # Dashboard web (HTML + CSS + JS vanilla)
-├── deploy/
-│   ├── systemd/
-│   │   └── sai-monitor.service   # Servicio systemd con hardening
-│   ├── nut/                      # Plantillas de configuración NUT
-│   ├── network/
-│   │   └── nftables-sai.conf     # Firewall por subred
-│   └── tls/
-│       └── gen-cert.sh           # TLS autofirmado (opcional)
-├── scripts/
-│   └── serve.py             # Servidor local del dashboard (Mac/Linux)
-└── INSTALACION.md           # Guía con todos los errores reales encontrados
+orange-pi/
+├── pi/                                ← LO QUE VA A LA ORANGE PI
+│   ├── bridge/
+│   │   ├── main.go                    Puente NUT→HTTP (Go, stdlib pura)
+│   │   ├── go.mod
+│   │   └── sai-monitor-arm64          Binario compilado para ARM64
+│   └── deploy/
+│       ├── sai-monitor.env            Variables de entorno (token, password)
+│       ├── systemd/
+│       │   └── sai-monitor.service    Servicio systemd con hardening
+│       ├── nut/                       Plantillas de configuración NUT
+│       ├── network/
+│       │   └── nftables-sai.conf      Firewall por subred
+│       └── tls/
+│           └── gen-cert.sh            TLS autofirmado (opcional)
+│
+├── client/                            ← LO QUE CORRE EN EL MAC/NAVEGADOR
+│   ├── dashboard/
+│   │   └── index.html                 Dashboard web (HTML + CSS + JS vanilla)
+│   └── scripts/
+│       └── serve.py                   Servidor local del dashboard
+│
+├── INSTALACION.md                     Guía paso a paso con errores reales
+├── PRODUCT.md                         Decisiones de diseño y propósito
+└── README.md
 ```
 
 ---
@@ -76,13 +86,13 @@ Ver **[INSTALACION.md](INSTALACION.md)** para la guía completa paso a paso.
 
 ```bash
 # 1. Subir el binario compilado a la Pi
-scp bridge/sai-monitor-arm64 root@IP_PI:/tmp/
+scp pi/bridge/sai-monitor-arm64 root@IP_PI:/tmp/
 
 # 2. Instalar y configurar NUT + servicio systemd en la Pi
 #    (ver INSTALACION.md, Pasos 2-4)
 
 # 3. Abrir el dashboard en el Mac
-python3 scripts/serve.py
+python3 client/scripts/serve.py
 ```
 
 ---
