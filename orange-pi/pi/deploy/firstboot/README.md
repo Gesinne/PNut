@@ -38,7 +38,7 @@ Arranca la Pi, conéctate por SSH como root y, desde el Mac:
 
 ```bash
 cd ~/Documents/Sai\ Orange\ Pi/orange-pi
-scp -r pi/deploy/firstboot pi/bridge/sai-monitor-arm64 root@IP_PI:/tmp/
+scp -r pi/deploy/firstboot pi/deploy/systemd pi/bridge/sai-monitor-arm64 root@IP_PI:/tmp/
 ssh root@IP_PI 'cd /tmp/firstboot && ./install.sh'
 ```
 
