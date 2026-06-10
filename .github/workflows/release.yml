@@ -1,0 +1,57 @@
+name: Build & Release PNut Bridge
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'orange-pi/pi/bridge/**'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build for ARM64 (Orange Pi / RPi 64-bit)
+        working-directory: orange-pi/pi/bridge
+        run: |
+          mkdir -p ../../../releases
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o ../../../releases/pnut-bridge-linux-arm64 .
+
+      - name: Build for ARMv7 (RPi 32-bit antiguas)
+        working-directory: orange-pi/pi/bridge
+        run: |
+          GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -ldflags="-s -w" -o ../../../releases/pnut-bridge-linux-armv7 .
+
+      - name: Build for amd64 (testing)
+        working-directory: orange-pi/pi/bridge
+        run: |
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o ../../../releases/pnut-bridge-linux-amd64 .
+
+      - name: Calcular tag de release (timestamp)
+        id: tag
+        run: echo "tag=v$(date +%Y%m%d-%H%M%S)" >> $GITHUB_OUTPUT
+
+      - name: Crear release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: PNut Bridge ${{ steps.tag.outputs.tag }}
+          body: |
+            Binarios precompilados del PNut bridge.
+
+            En la RPi/Orange Pi descarga el binario que toque (`arm64`, `armv7`, `amd64`) y guárdalo en `/usr/local/bin/pnut-bridge`.
+
+            El script `pnut-install.sh` que descargas desde admin.gesinne.cloud ya hace todo esto automáticamente.
+          files: releases/*
+          fail_on_unmatched_files: true
