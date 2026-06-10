@@ -6,7 +6,7 @@ product
 
 ## Users
 
-Guillermo, homelab sysadmin en entorno doméstico. Accede desde Mac o móvil vía LAN. Contexto de uso: comprobaciones rápidas del estado del SAI, no monitorización de misión crítica. Trabajo técnico, conocimiento del sistema.
+Homelab sysadmin en entorno doméstico. Accede desde Mac o móvil vía LAN. Contexto de uso: comprobaciones rápidas del estado del SAI, no monitorización de misión crítica. Trabajo técnico, conocimiento del sistema.
 
 ## Product Purpose
 
