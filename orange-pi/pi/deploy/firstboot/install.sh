@@ -3,16 +3,33 @@
 # Ejecuta esto UNA vez en la Pi (vía SSH como root) tras flashear Armbian.
 # Después, en cada arranque, sai-bootstrap.service detecta el SAI y configura.
 # Idempotente: relanzarlo no rompe nada.
+#
+# Layout esperado en la Pi (resultado del scp indicado abajo):
+#   /tmp/firstboot/       <- este directorio
+#   /tmp/sai-monitor-arm64
+#   /tmp/systemd/sai-monitor.service
 
 set -euo pipefail
 
 [[ $EUID -eq 0 ]] || { echo "requiere root" >&2; exit 1; }
 
 SRC="$(cd "$(dirname "$0")" && pwd)"
-DEPLOY="$(cd "$SRC/.." && pwd)"
-BIN_SRC="${DEPLOY}/../bridge/sai-monitor-arm64"
+BIN_SRC="${SRC}/../sai-monitor-arm64"
+SVC_SRC="${SRC}/../systemd/sai-monitor.service"
 
-[[ -r "$BIN_SRC" ]] || { echo "no encuentro $BIN_SRC" >&2; exit 1; }
+if [[ ! -r "$BIN_SRC" ]]; then
+  echo "no encuentro el binario en $BIN_SRC" >&2
+  echo "En el Mac, ejecuta:" >&2
+  echo "  scp -r pi/deploy/firstboot pi/deploy/systemd pi/bridge/sai-monitor-arm64 root@IP_PI:/tmp/" >&2
+  exit 1
+fi
+
+if [[ ! -r "$SVC_SRC" ]]; then
+  echo "no encuentro el unit en $SVC_SRC" >&2
+  echo "En el Mac, ejecuta:" >&2
+  echo "  scp -r pi/deploy/firstboot pi/deploy/systemd pi/bridge/sai-monitor-arm64 root@IP_PI:/tmp/" >&2
+  exit 1
+fi
 
 echo "==> copiando script bootstrap a /usr/local/sbin/"
 install -m 0755 -o root -g root "$SRC/sai-bootstrap.sh" /usr/local/sbin/sai-bootstrap.sh
@@ -23,7 +40,7 @@ install -m 0755 -o root -g root "$BIN_SRC" /usr/local/lib/sai-monitor/sai-monito
 
 echo "==> instalando units systemd"
 install -m 0644 -o root -g root "$SRC/sai-bootstrap.service" /etc/systemd/system/sai-bootstrap.service
-install -m 0644 -o root -g root "$DEPLOY/systemd/sai-monitor.service" /etc/systemd/system/sai-monitor.service
+install -m 0644 -o root -g root "$SVC_SRC" /etc/systemd/system/sai-monitor.service
 
 systemctl daemon-reload
 systemctl enable sai-bootstrap.service

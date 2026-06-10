@@ -57,9 +57,12 @@ load_boot_conf() {
   CONF_BRIDGE_ORIGINS=""
   if [[ -r "$BOOT_CONF" ]]; then
     log "leyendo $BOOT_CONF"
-    while IFS='=' read -r k v; do
-      [[ -z "${k// /}" || "${k:0:1}" == "#" ]] && continue
+    local line k v
+    while IFS= read -r line; do
+      k="${line%%=*}"
+      v="${line#*=}"
       k="${k// /}"
+      [[ -z "$k" || "${k:0:1}" == "#" ]] && continue
       v="$(sanitize "$v")"
       case "$k" in
         BRIDGE_NAME) CONF_BRIDGE_NAME="$v" ;;
@@ -110,14 +113,14 @@ ensure_credentials() {
     generated=1
   fi
   if (( generated )); then
-    umask 077
+    # Pre-crea con permisos finales antes de escribir para que el contenido
+    # nunca sea visible con permisos más laxos.
+    install -m 0600 -o root -g root /dev/null "$CREDS"
     cat > "$CREDS" <<EOF
 BRIDGE_TOKEN=$BRIDGE_TOKEN
 NUT_PASS=$NUT_PASS
 BRIDGE_ENROLLMENT_PASSWORD=$BRIDGE_ENROLLMENT_PASSWORD
 EOF
-    chmod 600 "$CREDS"
-    chown root:root "$CREDS"
     log "credenciales generadas en $CREDS (lee con: sudo cat $CREDS)"
   fi
 }
@@ -158,23 +161,27 @@ write_nut_configs() {
   local desc="${product:-SAI}"
   log "escribiendo configs NUT (driver=$driver vendorid=$vendorid productid=$productid)"
 
-  install -m 0644 -o root -g root /dev/stdin /etc/nut/nut.conf <<<'MODE=netserver'
+  # nut.conf no contiene secretos; escritura directa con permisos correctos.
+  printf 'MODE=netserver\n' > /etc/nut/nut.conf
+  chmod 0644 /etc/nut/nut.conf
+  chown root:nut /etc/nut/nut.conf
 
+  # Pre-crea con permisos finales antes de escribir para evitar ventana
+  # donde upsd.conf/users/ups.conf sean legibles por otros.
+  install -m 0640 -o root -g nut /dev/null /etc/nut/upsd.conf
   cat > /etc/nut/upsd.conf <<'EOF'
 LISTEN 127.0.0.1 3493
 MAXAGE 15
 EOF
-  chmod 640 /etc/nut/upsd.conf
-  chown root:nut /etc/nut/upsd.conf
 
+  install -m 0640 -o root -g nut /dev/null /etc/nut/upsd.users
   cat > /etc/nut/upsd.users <<EOF
 [monitor]
     password = ${NUT_PASS}
     upsmon primary
 EOF
-  chmod 640 /etc/nut/upsd.users
-  chown root:nut /etc/nut/upsd.users
 
+  install -m 0640 -o root -g nut /dev/null /etc/nut/ups.conf
   cat > /etc/nut/ups.conf <<EOF
 maxretry = 3
 pollinterval = 2
@@ -186,15 +193,14 @@ pollinterval = 2
     productid = ${productid}
     desc = "${desc}"
 EOF
-  chmod 640 /etc/nut/ups.conf
-  chown root:nut /etc/nut/ups.conf
 }
 
 write_env_file() {
   local name="${CONF_BRIDGE_NAME:-$BRIDGE_NAME_DEFAULT}"
   local origins="${CONF_BRIDGE_ORIGINS:-$BRIDGE_ORIGINS_DEFAULT}"
   log "escribiendo $ENV_FILE"
-  umask 077
+  # Pre-crea con permisos finales antes de escribir (contiene BRIDGE_TOKEN).
+  install -m 0600 -o root -g nut /dev/null "$ENV_FILE"
   cat > "$ENV_FILE" <<EOF
 BRIDGE_LISTEN=:49152
 BRIDGE_TOKEN=${BRIDGE_TOKEN}
@@ -204,8 +210,6 @@ NUT_ADDR=127.0.0.1:3493
 BRIDGE_CACHE_TTL=1s
 BRIDGE_ORIGINS=${origins}
 EOF
-  chmod 600 "$ENV_FILE"
-  chown root:nut "$ENV_FILE"
 }
 
 install_binary() {
@@ -237,7 +241,6 @@ restart_services() {
 }
 
 main() {
-  : > /dev/null  # noop, asegura que $LOG es escribible
   touch "$LOG"; chmod 640 "$LOG"
   log "==== arranque sai-bootstrap ===="
 
