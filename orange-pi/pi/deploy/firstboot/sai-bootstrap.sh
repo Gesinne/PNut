@@ -80,8 +80,14 @@ ensure_packages() {
   done
   if (( ${#missing[@]} )); then
     log "instalando paquetes: ${missing[*]}"
+    # Bloquea arranque de servicios en postinst (deadlock si corre dentro de systemd)
+    echo "exit 101" > /usr/sbin/policy-rc.d
     DEBIAN_FRONTEND=noninteractive apt-get update -qq
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${missing[@]}" || {
+      rm -f /usr/sbin/policy-rc.d
+      die "apt-get install falló"
+    }
+    rm -f /usr/sbin/policy-rc.d
   fi
 }
 
@@ -193,6 +199,14 @@ pollinterval = 2
     productid = ${productid}
     desc = "${desc}"
 EOF
+
+  # Regla udev específica para este SAI (complementa 62-nut-usbups.rules,
+  # garantiza permisos correctos tras instalar NUT sin reiniciar udev).
+  local vid_lower
+  vid_lower="$(printf '%s' "${vendorid}" | tr '[:upper:]' '[:lower:]')"
+  cat > /etc/udev/rules.d/62-nut-sai1.rules <<EOF
+SUBSYSTEM=="usb", ATTR{idVendor}=="${vid_lower}", ATTR{idProduct}=="${productid,,}", GROUP="nut", MODE="0660"
+EOF
 }
 
 write_env_file() {
@@ -222,22 +236,31 @@ install_binary() {
 
 restart_services() {
   systemctl daemon-reload
-  systemctl unmask nut-server sai-monitor 2>/dev/null || true
-  systemctl enable nut-server sai-monitor >/dev/null
+  systemctl unmask nut-driver@sai1 nut-server sai-monitor 2>/dev/null || true
+  systemctl enable nut-driver@sai1 nut-server sai-monitor >/dev/null 2>&1 || true
+  # Aplica reglas udev antes de arrancar el driver (necesario tras instalar NUT)
+  log "aplicando reglas udev USB"
+  udevadm control --reload-rules
+  udevadm trigger --subsystem-match=usb
+  sleep 2
+  log "arrancando driver NUT (nut-driver@sai1)"
+  systemctl restart --no-block nut-driver@sai1
+  sleep 3
   log "reiniciando nut-server"
-  systemctl restart nut-server
-  # Espera a que upsd cargue el driver (paso 2.4 INSTALACION).
+  # --no-block: no esperar a que el driver USB inicialice (puede tardar >90s en ARM)
+  systemctl restart --no-block nut-server
+  # Polling: hasta 60s para que upsd cargue el driver
   local i
-  for i in 1 2 3; do
+  for i in $(seq 1 20); do
     sleep 3
     if upsc sai1 >/dev/null 2>&1; then
       log "upsc sai1 OK (intento $i)"
       break
     fi
-    (( i == 3 )) && log "AVISO: upsc sai1 no responde tras 9s"
+    (( i == 20 )) && log "AVISO: upsc sai1 no responde tras 60s, continúa de todos modos"
   done
   log "reiniciando sai-monitor"
-  systemctl restart sai-monitor
+  systemctl restart --no-block sai-monitor
 }
 
 main() {

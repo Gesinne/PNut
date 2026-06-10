@@ -13,7 +13,7 @@ ExecStart=/usr/local/sbin/sai-bootstrap.sh
 RemainAfterExit=no
 StandardOutput=journal
 StandardError=journal
-TimeoutStartSec=180
+TimeoutStartSec=300
 
 [Install]
 WantedBy=multi-user.target
