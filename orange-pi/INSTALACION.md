@@ -228,7 +228,7 @@ El proyecto incluye `sai-monitor-arm64` precompilado. No hace falta instalar Go 
 **En el Mac**, desde la carpeta del repo:
 
 ```bash
-cd ~/Documents/PNut/orange-pi
+cd ~/tu-repo/orange-pi
 scp pi/bridge/sai-monitor-arm64 root@IP_DE_LA_PI:/tmp/
 ```
 
@@ -244,7 +244,7 @@ Sustituye `IP_DE_LA_PI` por la IP real de tu Orange Pi (la misma que usas para S
 
 ```bash
 brew install go      # solo si no lo tienes
-cd ~/Documents/PNut/orange-pi/pi/bridge
+cd ~/tu-repo/orange-pi/pi/bridge
 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o sai-monitor-arm64 .
 
 file sai-monitor-arm64
@@ -404,7 +404,7 @@ Si todo da estos resultados, el puente funciona y el sistema está listo.
 En el Mac, desde la carpeta del proyecto:
 
 ```bash
-cd ~/Documents/PNut/orange-pi
+cd ~/tu-repo/orange-pi
 python3 client/scripts/serve.py
 ```
 
