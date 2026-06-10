@@ -82,16 +82,14 @@ orange-pi/
 
 ## Instalación rápida
 
-Ver **[INSTALACION.md](INSTALACION.md)** para la guía completa paso a paso.
+Ver **[INSTALACION.md](INSTALACION.md)** para la guía completa o el README de bootstrap automático en [`pi/deploy/firstboot/`](pi/deploy/firstboot/).
 
 ```bash
-# 1. Subir el binario compilado a la Pi
-scp pi/bridge/sai-monitor-arm64 root@IP_PI:/tmp/
+# Desde la carpeta orange-pi/ del repo — copia todo a la Pi e instala
+scp -r pi/deploy/firstboot pi/deploy/systemd pi/bridge/sai-monitor-arm64 root@IP_PI:/tmp/
+ssh root@IP_PI 'cd /tmp/firstboot && ./install.sh && systemctl reboot'
 
-# 2. Instalar y configurar NUT + servicio systemd en la Pi
-#    (ver INSTALACION.md, Pasos 2-4)
-
-# 3. Abrir el dashboard en el Mac
+# Cuando vuelva: abrir dashboard en el Mac
 python3 client/scripts/serve.py
 ```
 

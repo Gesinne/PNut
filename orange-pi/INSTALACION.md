@@ -2,9 +2,34 @@
 
 Guía probada paso a paso sobre **Orange Pi Zero Plus + Armbian + Salicru SPS 850**. Incluye los comandos exactos, ejemplos de salida real, y los errores que pueden aparecer con su solución.
 
+> **¿Quieres instalación automática?** Si solo quieres flashear Armbian, copiar un script y enchufar el SAI, salta a **[Instalación automática](#instalación-automática-cero-comandos-tras-el-primer-arranque)**. La guía manual de abajo sigue siendo la referencia para entender qué ocurre por dentro y para resolver problemas.
+
 ---
 
-## Tabla de contenido
+## Instalación automática (cero comandos tras el primer arranque)
+
+A partir de junio 2026 el repo incluye un bootstrap que **detecta el SAI USB y configura NUT solo en cada arranque**. Idempotente y sin procesos en segundo plano (pensado para Orange Pi Zero Plus con poca RAM):
+
+- Primer arranque con SAI conectado → instala NUT, escribe configs con los IDs detectados, genera token + password, arranca puente.
+- Reinicios siguientes con el mismo SAI → sale en milisegundos sin tocar nada.
+- Cambias de SAI y reinicias → reescribe `ups.conf` con los nuevos IDs y reinicia los servicios. El token y la password de enrollment **persisten**, no rompes el pairing del dashboard.
+
+Guía paso a paso: **[`pi/deploy/firstboot/README.md`](pi/deploy/firstboot/README.md)**.
+
+Resumen ultra-corto:
+
+```bash
+# En el Mac, dentro del repo
+cd orange-pi
+scp -r pi/deploy/firstboot pi/deploy/systemd pi/bridge/sai-monitor-arm64 root@IP_PI:/tmp/
+ssh root@IP_PI 'cd /tmp/firstboot && ./install.sh && systemctl reboot'
+```
+
+Cuando la Pi vuelva del reinicio, abre el dashboard y pulsa "Buscar SAIs en la red". Aparecerá el SAI; introduce la password de enrollment (la encuentras con `sudo cat /etc/sai-monitor/.creds` por SSH) y listo.
+
+---
+
+## Tabla de contenido (guía manual / referencia)
 
 - [Hardware verificado](#hardware-verificado)
 - [Imagen de Armbian](#imagen-de-armbian)

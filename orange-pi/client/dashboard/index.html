@@ -1206,9 +1206,17 @@ document.getElementById("btn-discover").addEventListener("click", function(){
         results.innerHTML = '<div class="discover-msg">No se encontraron SAIs en la red.</div>';
         return;
       }
+      var savedUrls = loadEquipos().map(function(e){ return e.url.replace(/\/+$/, ""); });
+      var newDevices = safe.filter(function(d){
+        return savedUrls.indexOf(d.url.replace(/\/+$/, "")) === -1;
+      });
+      if(!newDevices.length){
+        results.innerHTML = '<div class="discover-msg">Todos los SAIs encontrados ya están configurados.</div>';
+        return;
+      }
       var container = document.createElement("div");
       container.className = "discover-list";
-      safe.forEach(function(d){
+      newDevices.forEach(function(d){
         var wrap = document.createElement("div");
         var item = document.createElement("div");
         item.className = "discover-item";
