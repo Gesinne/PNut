@@ -1208,6 +1208,7 @@ document.getElementById("btn-discover").addEventListener("click", function(){
       }
       var container = document.createElement("div");
       container.className = "discover-list";
+      var savedUrls = loadEquipos().map(function(e){ return e.url.replace(/\/+$/, ""); });
       safe.forEach(function(d){
         var wrap = document.createElement("div");
         var item = document.createElement("div");
@@ -1225,26 +1226,34 @@ document.getElementById("btn-discover").addEventListener("click", function(){
         var actions = document.createElement("div");
         actions.className = "discover-item-actions";
 
-        var connect = document.createElement("button");
-        connect.className = "btn-primary btn-sm";
-        connect.textContent = "Conectar con contraseña";
-        connect.addEventListener("click", function(){
-          openEnrollForm(wrap, d);
-        });
+        var alreadySaved = savedUrls.indexOf(d.url.replace(/\/+$/, "")) !== -1;
+        if(alreadySaved){
+          var badge = document.createElement("span");
+          badge.style.cssText = "font-size:12px;color:var(--ok);padding:4px 8px;font-weight:600";
+          badge.textContent = "✓ Ya configurado";
+          actions.appendChild(badge);
+        } else {
+          var connect = document.createElement("button");
+          connect.className = "btn-primary btn-sm";
+          connect.textContent = "Conectar con contraseña";
+          connect.addEventListener("click", function(){
+            openEnrollForm(wrap, d);
+          });
 
-        var manual = document.createElement("button");
-        manual.className = "btn-ghost btn-sm";
-        manual.textContent = "Añadir manualmente";
-        manual.addEventListener("click", function(){
-          document.getElementById("f-label").value = d.name || "";
-          document.getElementById("f-url").value   = d.url;
-          document.getElementById("f-token").value = "";
-          updateAddBtn();
-          document.getElementById("f-token").focus();
-        });
+          var manual = document.createElement("button");
+          manual.className = "btn-ghost btn-sm";
+          manual.textContent = "Añadir manualmente";
+          manual.addEventListener("click", function(){
+            document.getElementById("f-label").value = d.name || "";
+            document.getElementById("f-url").value   = d.url;
+            document.getElementById("f-token").value = "";
+            updateAddBtn();
+            document.getElementById("f-token").focus();
+          });
 
-        actions.appendChild(connect);
-        actions.appendChild(manual);
+          actions.appendChild(connect);
+          actions.appendChild(manual);
+        }
         item.appendChild(info); item.appendChild(actions);
         wrap.appendChild(item);
         container.appendChild(wrap);
